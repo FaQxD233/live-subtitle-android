@@ -321,8 +321,8 @@ class GeminiClient(
         }
 
         // Log interruption / turn-complete events for debugging latency.
-        content.optBool("turnComplete", false).let { if (it) Log.v(TAG, "turnComplete") }
-        content.optBool("interrupted", false).let { if (it) Log.v(TAG, "interrupted") }
+        if (content.optBoolean("turnComplete", false)) Log.v(TAG, "turnComplete")
+        if (content.optBoolean("interrupted", false)) Log.v(TAG, "interrupted")
     }
 
     companion object {
