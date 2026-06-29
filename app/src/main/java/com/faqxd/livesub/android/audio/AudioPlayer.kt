@@ -19,7 +19,7 @@ import java.nio.ByteOrder
  */
 class AudioPlayer(
     private val sampleRate: Int = GEMINI_OUTPUT_RATE,
-    @Volatile var volume: Float = 0.8f,
+    @Volatile var gain: Float = 0.8f,
 ) {
     private val lock = Any()
     private var buffer = FloatArray(0)
@@ -52,7 +52,7 @@ class AudioPlayer(
             .setBufferSizeInBytes(minBuf * 4)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
-        t.setVolume(volume.coerceIn(0f, 1f))
+        t.setVolume(gain.coerceIn(0f, 1f))
         t.play()
         track = t
         running = true
@@ -84,8 +84,8 @@ class AudioPlayer(
     }
 
     fun setVolume(v: Float) {
-        volume = v.coerceIn(0f, 1f)
-        track?.setVolume(volume)
+        gain = v.coerceIn(0f, 1f)
+        track?.setVolume(gain)
     }
 
     fun stop() {

@@ -103,7 +103,7 @@ class LiveTranslateService : Service() {
         // Player (echo)
         if (s.echoTargetLanguage) {
             try {
-                val p = AudioPlayer(volume = s.playbackVolume).also { player = it }
+                val p = AudioPlayer(gain = s.playbackVolume).also { player = it }
                 p.start()
             } catch (e: Exception) {
                 Log.w(TAG, "AudioPlayer init failed: ${e.message}")
