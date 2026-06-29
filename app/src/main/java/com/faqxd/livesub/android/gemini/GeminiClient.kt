@@ -246,7 +246,12 @@ class GeminiClient(
             append("- Never echo back what the user said in the original language.\n")
         }
         return JSONObject().apply {
-            put("model", biliModel)
+            // Live API's `model` field requires the "models/" prefix, same
+            // as buildLiveSetup. Without it the server returns
+            // "<name> is not found for API version v1beta" — which is
+            // confusing because the model *does* exist, just under the
+            // `models/` namespace.
+            put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
             put("generationConfig", JSONObject().apply {
                 put("responseModalities", JSONArray().apply { put("AUDIO") })
             })
