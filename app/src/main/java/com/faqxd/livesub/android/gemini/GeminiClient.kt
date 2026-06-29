@@ -204,8 +204,7 @@ class GeminiClient(
 
     /**
      * Bidirectional translate setup — uses a general-purpose Live model
-     * ([biliModel], default `gemini-3-flash-live` — the free-tier Live
-     * API model on Google AI Studio / Cloud Console) driven by a built-in
+     * ([biliModel], default `gemini-3-flash-live`) driven by a built-in
      * system prompt that detects the source language and translates to
      * the *other* language in the pair.
      *
@@ -213,15 +212,16 @@ class GeminiClient(
      *  - No `translationConfig` (the model decides the target language
      *    based on the source it detected, since `targetLanguageCode` is
      *    a fixed single-direction field and can't express "either way").
-     *  - `responseModalities = ["AUDIO"]` — `gemini-3-flash-live` is a
-     *    native-audio model and doesn't support TEXT-only output. The
-     *    BILI preset reads the translation back from
-     *    `outputAudioTranscription` (text form of the spoken translation)
-     *    rather than from `modelTurn.parts[].text`.
-     *  - The audio output is silently discarded by the service (no
-     *    AudioPlayer is attached in BILI mode), so the user only sees
-     *    the text translation on the overlay — no echo playback.
-     *  - `inputAudioTranscription` enabled so the original speech still
+     *  - `responseModalities = ["TEXT"]` — the translation arrives as
+     *    text via `modelTurn.parts[].text`. This is simpler and avoids
+     *    needing `outputAudioTranscription` (which some Live models
+     *    reject with "invalid argument").
+     *  - No `outputAudioTranscription` (unnecessary in TEXT mode, and
+     *    was the likely cause of "invalid argument" rejections on
+     *    `gemini-3-flash-live`).
+     *  - No `contextWindowCompression` (also rejected by some models;
+     *    BILI sessions are short anyway).
+     *  - `inputAudioTranscription` kept so the original speech still
      *    shows up in the secondary caption line.
      *  - The system prompt is built-in; the user's custom prompt is
      *    intentionally ignored (so they can't accidentally break the
@@ -237,32 +237,22 @@ class GeminiClient(
             append("You are a real-time simultaneous interpreter. ")
             append("The user speaks either $langA or $langB. ")
             append("Detect which language they are speaking, and translate to the OTHER language: ")
-            append("if they speak $langA, respond in $langB; if they speak $langB, respond in $langA.\n")
+            append("if they speak $langA, write the translation in $langB; ")
+            append("if they speak $langB, write the translation in $langA.\n")
             append("Rules:\n")
-            append("- Respond with ONLY the translation, spoken naturally in the target language.\n")
-            append("- No explanations, no preamble, no language tags, no meta-commentary.\n")
+            append("- Output ONLY the translation as text. No explanations, no preamble, no language tags.\n")
             append("- Keep the translation natural and conversational, preserving tone and intent.\n")
             append("- If the speech is partial or unclear, output the best partial translation you can.\n")
+            append("- Do not add quotation marks or any wrapper around the translation.\n")
             append("- Never echo back what the user said in the original language.\n")
         }
         return JSONObject().apply {
-            // Live API's `model` field requires the "models/" prefix, same
-            // as buildLiveSetup. Without it the server returns
-            // "<name> is not found for API version v1beta" — which is
-            // confusing because the model *does* exist, just under the
-            // `models/` namespace.
+            // Live API's `model` field requires the "models/" prefix.
             put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
             put("generationConfig", JSONObject().apply {
-                put("responseModalities", JSONArray().apply { put("AUDIO") })
+                put("responseModalities", JSONArray().apply { put("TEXT") })
             })
             put("inputAudioTranscription", JSONObject())
-            // outputAudioTranscription carries the text form of the spoken
-            // translation — that's what we display as the output caption.
-            put("outputAudioTranscription", JSONObject())
-            put("contextWindowCompression", JSONObject().apply {
-                put("triggerTokens", "0")
-                put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
-            })
             put("systemInstruction", JSONObject().apply {
                 put("parts", JSONArray().apply { put(JSONObject().put("text", prompt)) })
             })
