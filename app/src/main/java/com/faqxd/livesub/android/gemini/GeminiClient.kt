@@ -201,17 +201,23 @@ class GeminiClient(
 
     /**
      * Bidirectional translate setup — uses a general-purpose Live model
-     * ([biliModel], default `gemini-3-flash-live` — the free-tier Live API
-     * model on Google AI Studio) driven by a built-in system prompt that
-     * detects the source language and translates to the *other* language
-     * in the pair.
+     * ([biliModel], default `gemini-2.0-flash-live` — the free-tier Live
+     * API model on Google AI Studio) driven by a built-in system prompt
+     * that detects the source language and translates to the *other*
+     * language in the pair.
      *
      * Differences vs [buildLiveSetup]:
      *  - No `translationConfig` (the model decides the target language
-     *    based on the source it detected).
-     *  - `responseModalities = ["TEXT"]` — the BILI presets output text
-     *    only (no audio echo). This keeps latency low and avoids the model
-     *    "parroting" the user's speech in the wrong language.
+     *    based on the source it detected, since `targetLanguageCode` is
+     *    a fixed single-direction field and can't express "either way").
+     *  - `responseModalities = ["AUDIO"]` — `gemini-2.0-flash-live` is a
+     *    native-audio model and doesn't support TEXT-only output. The
+     *    BILI preset reads the translation back from
+     *    `outputAudioTranscription` (text form of the spoken translation)
+     *    rather than from `modelTurn.parts[].text`.
+     *  - The audio output is silently discarded by the service (no
+     *    AudioPlayer is attached in BILI mode), so the user only sees
+     *    the text translation on the overlay — no echo playback.
      *  - `inputAudioTranscription` enabled so the original speech still
      *    shows up in the secondary caption line.
      *  - The system prompt is built-in; the user's custom prompt is
@@ -228,21 +234,23 @@ class GeminiClient(
             append("You are a real-time simultaneous interpreter. ")
             append("The user speaks either $langA or $langB. ")
             append("Detect which language they are speaking, and translate to the OTHER language: ")
-            append("if they speak $langA, output $langB; if they speak $langB, output $langA.\n")
+            append("if they speak $langA, respond in $langB; if they speak $langB, respond in $langA.\n")
             append("Rules:\n")
-            append("- Output ONLY the translation. No explanations, no preamble, no language tags.\n")
+            append("- Respond with ONLY the translation, spoken naturally in the target language.\n")
+            append("- No explanations, no preamble, no language tags, no meta-commentary.\n")
             append("- Keep the translation natural and conversational, preserving tone and intent.\n")
             append("- If the speech is partial or unclear, output the best partial translation you can.\n")
-            append("- Do not add quotation marks or any wrapper around the translation.\n")
+            append("- Never echo back what the user said in the original language.\n")
         }
         return JSONObject().apply {
             put("model", biliModel)
             put("generationConfig", JSONObject().apply {
-                put("responseModalities", JSONArray().apply { put("TEXT") })
+                put("responseModalities", JSONArray().apply { put("AUDIO") })
             })
             put("inputAudioTranscription", JSONObject())
-            // No outputAudioTranscription — the model's text parts already
-            // carry the translation, doubling up would just duplicate.
+            // outputAudioTranscription carries the text form of the spoken
+            // translation — that's what we display as the output caption.
+            put("outputAudioTranscription", JSONObject())
             put("contextWindowCompression", JSONObject().apply {
                 put("triggerTokens", "0")
                 put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })

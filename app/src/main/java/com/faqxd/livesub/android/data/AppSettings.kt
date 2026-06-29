@@ -62,14 +62,19 @@ data class AppSettings(
 
         companion object {
             /**
-             * Default model for BILI modes. `gemini-3-flash-live` is the
-             * general-purpose Live API model that's available on the Google
-             * AI Studio free tier as of mid-2026. Users on paid tiers can
-             * override this in Settings (e.g. to `gemini-3.1-flash-live-preview`
-             * for newer features, or `gemini-2.5-flash-native-audio-latest`
-             * for audio echo support).
+             * Default model for BILI modes. `gemini-2.0-flash-live` is the
+             * general-purpose Live API model available on the Google AI
+             * Studio free tier. It's a native-audio model, so BILI mode
+             * uses responseModalities=["AUDIO"] (TEXT-only is not supported
+             * on this model) and silently discards the audio output via
+             * `player?.enqueuePcm16()` being a no-op when no AudioPlayer
+             * is attached — only the `outputAudioTranscription` text is
+             * shown on the overlay.
+             *
+             * Users on paid tiers can override this in Settings to
+             * `gemini-2.5-flash-live` or `gemini-2.5-flash-native-audio-dialog`.
              */
-            const val BILINGUAL_DEFAULT_MODEL = "gemini-3-flash-live"
+            const val BILINGUAL_DEFAULT_MODEL = "gemini-2.0-flash-live"
             fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: LIVE
         }
     }
@@ -123,7 +128,8 @@ data class AppSettings(
          */
         private fun migrateBiliModel(raw: String): String {
             return when (raw) {
-                "gemini-3.1-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
+                // Never-existed names that were temporarily shipped as defaults
+                "gemini-3-flash-live", "gemini-3.1-flash-live-preview",
                 "gemini-2.5-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
                 "" -> Mode.BILINGUAL_DEFAULT_MODEL
                 else -> raw
