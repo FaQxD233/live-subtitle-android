@@ -165,6 +165,9 @@ class GeminiClient(
             AppSettings.Mode.BILI_ZH_EN, AppSettings.Mode.BILI_ZH_JP -> buildBiliSetup(mode)
         }
         val envelope = JSONObject().put("setup", setup).toString()
+        Log.i(TAG, "sendSetup mode=$mode model=${setup.optString("model")} modality=${
+            setup.optJSONObject("generationConfig")?.optJSONArray("responseModalities")
+        }")
         return socket.send(envelope)
     }
 
@@ -201,16 +204,16 @@ class GeminiClient(
 
     /**
      * Bidirectional translate setup — uses a general-purpose Live model
-     * ([biliModel], default `gemini-2.0-flash-live` — the free-tier Live
-     * API model on Google AI Studio) driven by a built-in system prompt
-     * that detects the source language and translates to the *other*
-     * language in the pair.
+     * ([biliModel], default `gemini-3-flash-live` — the free-tier Live
+     * API model on Google AI Studio / Cloud Console) driven by a built-in
+     * system prompt that detects the source language and translates to
+     * the *other* language in the pair.
      *
      * Differences vs [buildLiveSetup]:
      *  - No `translationConfig` (the model decides the target language
      *    based on the source it detected, since `targetLanguageCode` is
      *    a fixed single-direction field and can't express "either way").
-     *  - `responseModalities = ["AUDIO"]` — `gemini-2.0-flash-live` is a
+     *  - `responseModalities = ["AUDIO"]` — `gemini-3-flash-live` is a
      *    native-audio model and doesn't support TEXT-only output. The
      *    BILI preset reads the translation back from
      *    `outputAudioTranscription` (text form of the spoken translation)
@@ -265,6 +268,7 @@ class GeminiClient(
         val root = try {
             JSONObject(raw)
         } catch (e: Exception) {
+            Log.w(TAG, "parse failed: ${e.message}")
             listener.onStatus("Parse failed: ${e.message}")
             return
         }
@@ -272,14 +276,21 @@ class GeminiClient(
         // Error
         root.optJSONObject("error")?.let { err ->
             val msg = err.optString("message", "Unknown")
+            Log.w(TAG, "server error: $msg  full=$raw")
             listener.onStatus("Gemini error: $msg")
             return
         }
 
         // setupComplete — bare ack
-        if (root.has("setupComplete")) return
+        if (root.has("setupComplete")) {
+            Log.i(TAG, "setupComplete received — pipeline ready")
+            return
+        }
 
-        val content = root.optJSONObject("serverContent") ?: return
+        val content = root.optJSONObject("serverContent") ?: run {
+            Log.v(TAG, "unhandled message: ${raw.take(200)}")
+            return
+        }
 
         content.optJSONObject("inputTranscription")?.let { tr ->
             val t = tr.optString("text", "")
@@ -308,6 +319,10 @@ class GeminiClient(
                 if (text.isNotEmpty()) listener.onOutputTranscript(text)
             }
         }
+
+        // Log interruption / turn-complete events for debugging latency.
+        content.optBool("turnComplete", false).let { if (it) Log.v(TAG, "turnComplete") }
+        content.optBool("interrupted", false).let { if (it) Log.v(TAG, "interrupted") }
     }
 
     companion object {

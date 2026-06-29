@@ -249,7 +249,7 @@
                 android:layout_height="44dp"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/edit_text_bg"
-                android:hint="gemini-2.0-flash-live"
+                android:hint="gemini-3-flash-live"
                 android:inputType="text"
                 android:paddingHorizontal="10dp"
                 android:textSize="13sp" />

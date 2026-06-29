@@ -62,19 +62,21 @@ data class AppSettings(
 
         companion object {
             /**
-             * Default model for BILI modes. `gemini-2.0-flash-live` is the
-             * general-purpose Live API model available on the Google AI
-             * Studio free tier. It's a native-audio model, so BILI mode
-             * uses responseModalities=["AUDIO"] (TEXT-only is not supported
+             * Default model for BILI modes. `gemini-3-flash-live` is the
+             * free-tier Live API model on Google AI Studio / Cloud Console.
+             * It's a native-audio model, so BILI mode uses
+             * responseModalities=["AUDIO"] (TEXT-only is not supported
              * on this model) and silently discards the audio output via
              * `player?.enqueuePcm16()` being a no-op when no AudioPlayer
              * is attached — only the `outputAudioTranscription` text is
              * shown on the overlay.
              *
-             * Users on paid tiers can override this in Settings to
-             * `gemini-2.5-flash-live` or `gemini-2.5-flash-native-audio-dialog`.
+             * Other valid choices users can enter in Settings:
+             *  - `gemini-2.5-flash-live` (older free-tier)
+             *  - `gemini-2.0-flash-live` (older free-tier)
+             *  - `gemini-2.5-flash-native-audio-dialog` (paid)
              */
-            const val BILINGUAL_DEFAULT_MODEL = "gemini-2.0-flash-live"
+            const val BILINGUAL_DEFAULT_MODEL = "gemini-3-flash-live"
             fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: LIVE
         }
     }
@@ -120,16 +122,22 @@ data class AppSettings(
         /**
          * Map deprecated/legacy biliModel strings to their current
          * equivalents. Returns the input unchanged if no migration is
-         * needed. Add new migrations here as defaults evolve.
+         * needed.
          *
          * `Mode.BILINGUAL_DEFAULT_MODEL` is qualified with `Mode.` because
          * the constant lives in the nested enum's companion object, not in
          * this outer companion object's scope.
+         *
+         * Note: only migrate values that were *never* valid model names.
+         * Don't migrate between real model names (e.g. gemini-2.0-flash-live
+         * to gemini-3-flash-live) — the user may have picked the older one
+         * on purpose for stability / quota reasons.
          */
         private fun migrateBiliModel(raw: String): String {
             return when (raw) {
-                // Never-existed names that were temporarily shipped as defaults
-                "gemini-3-flash-live", "gemini-3.1-flash-live-preview",
+                // Placeholder names that were briefly shipped but never
+                // corresponded to real models. Migrate to the current default.
+                "gemini-3.1-flash-live-preview",
                 "gemini-2.5-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
                 "" -> Mode.BILINGUAL_DEFAULT_MODEL
                 else -> raw
