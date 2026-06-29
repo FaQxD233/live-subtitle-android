@@ -222,24 +222,57 @@ class GeminiClient(
      * `outputAudioTranscription` (text form of the spoken translation).
      */
     private fun buildBiliSetup(mode: AppSettings.Mode): JSONObject {
-        val (langA, langB) = when (mode) {
-            AppSettings.Mode.BILI_ZH_EN -> "Chinese (Mandarin)" to "English"
-            AppSettings.Mode.BILI_ZH_JP -> "Chinese (Mandarin)" to "Japanese"
-            else -> "Chinese" to "English"
+        val langA: String
+        val langB: String
+        val examples: String
+        when (mode) {
+            AppSettings.Mode.BILI_ZH_EN -> {
+                langA = "Chinese (Mandarin)"; langB = "English"
+                examples = """
+                    |Examples (CRITICAL — study these carefully):
+                    |  User says "你好"        → You respond "Hello"
+                    |  User says "Hello"       → You respond "你好"
+                    |  User says "今天天气不错" → You respond "The weather is nice today"
+                    |  User says "How are you?" → You respond "你好吗？"
+                    |  User says "谢谢"        → You respond "Thank you"
+                    |  User says "Thank you"   → You respond "谢谢"
+                """.trimMargin()
+            }
+            AppSettings.Mode.BILI_ZH_JP -> {
+                langA = "Chinese (Mandarin)"; langB = "Japanese"
+                examples = """
+                    |Examples (CRITICAL — study these carefully):
+                    |  User says "你好"        → You respond "こんにちは"
+                    |  User says "こんにちは"   → You respond "你好"
+                    |  User says "今天天气不错" → You respond "今日はいい天気ですね"
+                    |  User says "元気ですか？" → You respond "你还好吗？"
+                    |  User says "谢谢"        → You respond "ありがとう"
+                    |  User says "ありがとう"   → You respond "谢谢"
+                """.trimMargin()
+            }
+            else -> {
+                langA = "Chinese (Mandarin)"; langB = "English"
+                examples = ""
+            }
         }
+
         val prompt = buildString {
-            append("You are a real-time simultaneous interpreter. ")
-            append("The user speaks either $langA or $langB. ")
-            append("Detect which language they are speaking, and translate to the OTHER language: ")
-            append("if they speak $langA, respond in $langB; ")
-            append("if they speak $langB, respond in $langA.\n")
-            append("Rules:\n")
-            append("- Respond with ONLY the translation, spoken naturally in the target language.\n")
-            append("- No explanations, no preamble, no language tags, no meta-commentary.\n")
-            append("- Keep the translation natural and conversational, preserving tone and intent.\n")
-            append("- If the speech is partial or unclear, output the best partial translation you can.\n")
-            append("- Never echo back what the user said in the original language.\n")
+            append("You are a real-time simultaneous interpreter for a bilingual conversation between $langA and $langB.\n\n")
+            append("CRITICAL RULE — you MUST detect the source language of the user's speech and translate to the OPPOSITE language:\n")
+            append("  - If user speaks $langA, you MUST respond in $langB.\n")
+            append("  - If user speaks $langB, you MUST respond in $langA.\n\n")
+            append("ANTI-PATTERN WARNING — do NOT do these:\n")
+            append("  - DO NOT translate everything to $langB by default. That is WRONG.\n")
+            append("  - DO NOT echo the user's speech in the original language.\n")
+            append("  - DO NOT add language tags, explanations, or meta-commentary.\n\n")
+            append(examples)
+            append("\n\nOutput rules:\n")
+            append("  - Respond with ONLY the translation, spoken naturally in the target language.\n")
+            append("  - Keep the translation natural and conversational, preserving tone and intent.\n")
+            append("  - If the speech is partial or unclear, output the best partial translation you can.\n")
+            append("  - Detect source language on EVERY utterance, even if it switches mid-conversation.\n")
         }
+
         return JSONObject().apply {
             put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
             put("generationConfig", JSONObject().apply {
