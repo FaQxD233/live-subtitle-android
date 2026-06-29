@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -45,6 +46,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggleBtn: Button
     private lateinit var settingsBtn: Button
     private lateinit var hintText: TextView
+    private lateinit var modeRadio: RadioGroup
+    private lateinit var modeDesc: TextView
 
     private var pendingStart = false
     private var serviceRunning = false
@@ -100,12 +103,17 @@ class MainActivity : AppCompatActivity() {
         toggleBtn = findViewById(R.id.toggleBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
         hintText = findViewById(R.id.hintText)
+        modeRadio = findViewById(R.id.modeRadio)
+        modeDesc = findViewById(R.id.modeDesc)
 
         toggleBtn.setOnClickListener { onToggleClicked() }
         settingsBtn.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        // The mode-radio listener is wired inside applySettingsToUi() so it
+        // can be temporarily detached while we programmatically check the
+        // right button on resume / settings reload.
         applySettingsToUi()
     }
 
@@ -117,7 +125,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySettingsToUi() {
-        langBadge.text = "→ ${Languages.nameFor(settings.targetLanguage)}"
+        // Mode-dependent UI: language badge + description + radio check.
+        // The radio listener is silenced while we programmatically check
+        // the right button so loading settings from disk doesn't fire a
+        // spurious restart.
+        modeRadio.setOnCheckedChangeListener(null)
+        when (settings.modeEnum) {
+            AppSettings.Mode.LIVE -> {
+                langBadge.text = "→ ${Languages.nameFor(settings.targetLanguage)}"
+                modeDesc.text = "Auto-detect source → translate to target language."
+                modeRadio.check(R.id.modeLive)
+            }
+            AppSettings.Mode.BILI_ZH_EN -> {
+                langBadge.text = "中 ↔ EN"
+                modeDesc.text = "Detect Chinese / English and translate to the other."
+                modeRadio.check(R.id.modeBiliZhEn)
+            }
+            AppSettings.Mode.BILI_ZH_JP -> {
+                langBadge.text = "中 ↔ JP"
+                modeDesc.text = "Detect Chinese / Japanese and translate to the other."
+                modeRadio.check(R.id.modeBiliZhJp)
+            }
+        }
+        modeRadio.setOnCheckedChangeListener { _, checkedId ->
+            val newMode = when (checkedId) {
+                R.id.modeBiliZhEn -> AppSettings.Mode.BILI_ZH_EN
+                R.id.modeBiliZhJp -> AppSettings.Mode.BILI_ZH_JP
+                else -> AppSettings.Mode.LIVE
+            }
+            if (newMode.id != settings.mode) {
+                settings.mode = newMode.id
+                settings.save(this)
+                applySettingsToUi()
+                if (serviceRunning) {
+                    ContextCompat.startForegroundService(
+                        this,
+                        LiveTranslateService.restartIntent(this)
+                    )
+                }
+            }
+        }
+
         inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
         if (settings.apiKey.isBlank()) {
             showHint(getString(R.string.err_no_api_key))

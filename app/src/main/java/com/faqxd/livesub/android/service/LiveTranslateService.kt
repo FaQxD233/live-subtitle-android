@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -57,6 +58,12 @@ class LiveTranslateService : Service() {
     private var mediaProjection: MediaProjection? = null
     @Volatile private var running = false
 
+    // Cached MediaProjection grant from the most recent ACTION_START.
+    // Reused by ACTION_RESTART so the user can change API key / language /
+    // echo / prompt without re-granting system-audio capture.
+    private var lastResultCode: Int = 0
+    private var lastResultData: Intent? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,6 +72,10 @@ class LiveTranslateService : Service() {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 @Suppress("DEPRECATION")
                 val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
+                if (resultData != null) {
+                    lastResultCode = resultCode
+                    lastResultData = resultData
+                }
                 // On Android 14+ startForeground must declare the exact
                 // service types in use. If a projection token is attached,
                 // we'll use mediaProjection; otherwise it's mic-only.
@@ -73,10 +84,16 @@ class LiveTranslateService : Service() {
             }
             ACTION_STOP -> {
                 stopPipeline()
+                // Forget the projection token on explicit stop so a later
+                // restart doesn't try to use a stale grant. ACTION_RESTART
+                // preserves it (see [restartPipelineIfNeeded]).
+                lastResultCode = 0
+                lastResultData = null
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             ACTION_TOGGLE -> togglePipeline()
+            ACTION_RESTART -> restartPipelineIfNeeded()
         }
         return START_STICKY
     }
@@ -100,8 +117,10 @@ class LiveTranslateService : Service() {
         // Overlay
         ensureOverlay(s)
 
-        // Player (echo)
-        if (s.echoTargetLanguage) {
+        // Player (echo). BILI modes use responseModalities=["TEXT"], so the
+        // model never returns audio and there's nothing to play back.
+        val wantEcho = s.echoTargetLanguage && !s.isBilingual
+        if (wantEcho) {
             try {
                 val p = AudioPlayer(gain = s.playbackVolume).also { player = it }
                 p.start()
@@ -119,6 +138,8 @@ class LiveTranslateService : Service() {
             systemPrompt = s.systemPrompt,
             echoTargetLanguage = s.echoTargetLanguage,
             apiBase = s.apiBase,
+            mode = s.modeEnum,
+            biliModel = s.biliModel,
         )
 
         // Audio capture
@@ -127,7 +148,7 @@ class LiveTranslateService : Service() {
             if (s.audioSource == "system" && resultData != null) {
                 startSystemCapture(cap, resultCode, resultData)
             } else {
-                cap.startMicrophone()
+                cap.startMicrophone(context = this)
             }
         } catch (e: Exception) {
             Log.e(TAG, "AudioCapture start failed", e)
@@ -161,6 +182,44 @@ class LiveTranslateService : Service() {
 
     private fun togglePipeline() {
         if (running) stopPipeline() else startPipeline(0, null)
+    }
+
+    /**
+     * Hot-restart the pipeline after the user changed settings in
+     * [com.faqxd.livesub.android.SettingsActivity].
+     *
+     * Mirrors `main.py:LiveBuddyApp.open_settings`:
+     *   stop() → 300ms delay → start() with the latest [AppSettings].
+     *
+     * The MediaProjection grant from the last ACTION_START is reused so the
+     * user doesn't have to re-grant system-audio capture when only the API
+     * key / target language / echo / prompt changed. If the user switched
+     * audioSource mic → system *without* an existing grant, we fall back to
+     * the microphone path and surface a notice in the overlay status line.
+     */
+    private fun restartPipelineIfNeeded() {
+        if (!running) {
+            // Service was started (e.g. by SettingsActivity) but no pipeline
+            // is active — nothing to restart. Don't auto-start either; the
+            // user must press Start from the main screen to begin capture.
+            return
+        }
+        stopPipeline()
+        scope.launch {
+            delay(300)
+            val s = AppSettings.load(this@LiveTranslateService)
+            val useSystem = s.audioSource == "system" && lastResultData != null
+            startForegroundIfNeeded(useSystemAudio = useSystem)
+            try {
+                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
+                if (s.audioSource == "system" && !useSystem) {
+                    overlay?.setStatus("System audio needs re-grant; using mic")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "restart failed", e)
+                overlay?.setStatus("Restart failed: ${e.message}")
+            }
+        }
     }
 
     // ---------- overlay ----------
@@ -355,6 +414,7 @@ class LiveTranslateService : Service() {
         const val ACTION_START = "com.faqxd.livesub.android.START"
         const val ACTION_STOP = "com.faqxd.livesub.android.STOP"
         const val ACTION_TOGGLE = "com.faqxd.livesub.android.TOGGLE"
+        const val ACTION_RESTART = "com.faqxd.livesub.android.RESTART"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
 
@@ -366,5 +426,14 @@ class LiveTranslateService : Service() {
 
         fun stopIntent(context: Context): Intent =
             Intent(context, LiveTranslateService::class.java).setAction(ACTION_STOP)
+
+        /**
+         * Build an intent that tells the service to tear down the current
+         * pipeline and start a fresh one with the latest [AppSettings].
+         * No-op if the pipeline isn't running. Sent by SettingsActivity
+         * after the user saves changes to a pipeline-affecting field.
+         */
+        fun restartIntent(context: Context): Intent =
+            Intent(context, LiveTranslateService::class.java).setAction(ACTION_RESTART)
     }
 }

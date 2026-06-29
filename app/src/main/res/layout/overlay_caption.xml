@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Floating caption overlay.
-    Root is a transparent container; the inner `overlayRoot` card is the visible
-    "HUD". Header (drag handle) + scrollable output/input + control buttons +
-    resize handle at bottom-right corner.
+
+    Root is a transparent FrameLayout. The inner `overlayRoot` LinearLayout is
+    the visible "HUD" card. Four corner ImageViews (`overlayResizeTL/TR/BL/BR`)
+    sit on top of the card so the user can resize from any corner — mirroring
+    `hud_window.py:_TransparentSizeGrip` (4 QSizeGrips, one per corner).
+
+    The whole `overlayRoot` is a drag handle; child buttons consume their own
+    touches first, so dragging only fires when pressing empty card areas.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -16,13 +21,15 @@
         android:layout_height="match_parent"
         android:layout_marginBottom="20dp"
         android:background="@drawable/overlay_card_bg"
-        android:elevation="12dp"
+        android:elevation="16dp"
+        android:outlineAmbientShadowColor="#66000000"
+        android:outlineSpotShadowColor="#CC000000"
         android:minWidth="280dp"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
         android:paddingVertical="12dp">
 
-        <!-- Header: status dot + status text + lang badge + close btn (also drag handle) -->
+        <!-- Header: status dot + status text + lang badge + close btn -->
         <LinearLayout
             android:id="@+id/overlayHeader"
             android:layout_width="match_parent"
@@ -135,7 +142,8 @@
                 android:paddingHorizontal="12dp"
                 android:text="@string/start"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/overlayClearBtn"
@@ -165,13 +173,45 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Resize handle (bottom-right corner, interactive) -->
+    <!-- Four corner resize handles. Each is 28dp × 28dp; the corner cursor
+         hint comes from the drawable (resize_handle is rotation-agnostic,
+         we visually flip it per corner via scaleX/scaleY in code if needed). -->
     <ImageView
-        android:id="@+id/overlayResizeHandle"
+        android:id="@+id/overlayResizeTL"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="top|start"
+        android:contentDescription="Resize top-left"
+        android:padding="2dp"
+        android:rotation="180"
+        android:src="@drawable/resize_handle" />
+
+    <ImageView
+        android:id="@+id/overlayResizeTR"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="top|end"
+        android:contentDescription="Resize top-right"
+        android:padding="2dp"
+        android:rotation="90"
+        android:src="@drawable/resize_handle" />
+
+    <ImageView
+        android:id="@+id/overlayResizeBL"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="bottom|start"
+        android:contentDescription="Resize bottom-left"
+        android:padding="2dp"
+        android:rotation="-90"
+        android:src="@drawable/resize_handle" />
+
+    <ImageView
+        android:id="@+id/overlayResizeBR"
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_gravity="bottom|end"
-        android:contentDescription="Resize"
+        android:contentDescription="Resize bottom-right"
         android:padding="2dp"
         android:src="@drawable/resize_handle" />
 </FrameLayout>

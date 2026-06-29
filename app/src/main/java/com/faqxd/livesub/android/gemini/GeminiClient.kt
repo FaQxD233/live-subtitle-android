@@ -2,6 +2,7 @@ package com.faqxd.livesub.android.gemini
 
 import android.util.Base64
 import android.util.Log
+import com.faqxd.livesub.android.data.AppSettings
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -20,6 +21,13 @@ import java.util.concurrent.TimeUnit
  * chunks via [sendAudio]; transcript / audio / status callbacks arrive on
  * the supplied listener (already on OkHttp's worker thread — callers should
  * hop to the main thread before touching UI).
+ *
+ * Two pipeline presets are supported via [configure]:
+ *  - [AppSettings.Mode.LIVE] — `gemini-3.5-live-translate-preview` with a
+ *    fixed `translationConfig.targetLanguageCode` (single-direction).
+ *  - [AppSettings.Mode.BILI_ZH_EN] / [BILI_ZH_JP] — a general-purpose Live
+ *    model driven by a built-in bidirectional system prompt; no
+ *    `translationConfig` is sent.
  */
 class GeminiClient(
     private val listener: Listener,
@@ -47,6 +55,8 @@ class GeminiClient(
     private var targetLang: String = "es"
     private var systemPrompt: String = ""
     private var echo: Boolean = true
+    private var mode: AppSettings.Mode = AppSettings.Mode.LIVE
+    private var biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL
 
     fun configure(
         apiKey: String,
@@ -54,12 +64,19 @@ class GeminiClient(
         systemPrompt: String,
         echoTargetLanguage: Boolean,
         apiBase: String = DEFAULT_API_BASE,
+        mode: AppSettings.Mode = AppSettings.Mode.LIVE,
+        biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL,
     ) {
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
         this.targetLang = targetLang
+        // In BILI modes the system prompt is built-in and the user's
+        // custom prompt is ignored — keep it stored anyway so switching
+        // back to LIVE mode restores the user's preference.
         this.systemPrompt = systemPrompt
         this.echo = echoTargetLanguage
+        this.mode = mode
+        this.biliModel = biliModel.ifBlank { AppSettings.Mode.BILINGUAL_DEFAULT_MODEL }
     }
 
     /** Start a new session. No-op if already running. */
@@ -143,30 +160,97 @@ class GeminiClient(
     }
 
     private fun sendSetup(socket: WebSocket): Boolean {
-        val setup = JSONObject().apply {
-            put("model", GEMINI_MODEL)
+        val setup = when (mode) {
+            AppSettings.Mode.LIVE -> buildLiveSetup()
+            AppSettings.Mode.BILI_ZH_EN, AppSettings.Mode.BILI_ZH_JP -> buildBiliSetup(mode)
+        }
+        val envelope = JSONObject().put("setup", setup).toString()
+        return socket.send(envelope)
+    }
+
+    /**
+     * Original unidirectional translate setup — uses the
+     * `gemini-3.5-live-translate-preview` model with a fixed
+     * `translationConfig.targetLanguageCode`. The user's custom
+     * `systemPrompt` is forwarded as `systemInstruction` if non-empty.
+     * `responseModalities = ["AUDIO"]` so the model can echo the translated
+     * speech back when `echoTargetLanguage` is true.
+     */
+    private fun buildLiveSetup(): JSONObject = JSONObject().apply {
+        put("model", GEMINI_MODEL)
+        put("generationConfig", JSONObject().apply {
+            put("responseModalities", JSONArray().apply { put("AUDIO") })
+            put("translationConfig", JSONObject().apply {
+                put("targetLanguageCode", targetLang)
+                put("echoTargetLanguage", echo)
+            })
+        })
+        put("inputAudioTranscription", JSONObject())
+        put("outputAudioTranscription", JSONObject())
+        put("contextWindowCompression", JSONObject().apply {
+            put("triggerTokens", "0")
+            put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
+        })
+        val instruction = systemPrompt.trim()
+        if (instruction.isNotEmpty()) {
+            put("systemInstruction", JSONObject().apply {
+                put("parts", JSONArray().apply { put(JSONObject().put("text", instruction)) })
+            })
+        }
+    }
+
+    /**
+     * Bidirectional translate setup — uses a general-purpose Live model
+     * ([biliModel], default `gemini-3-flash-live` — the free-tier Live API
+     * model on Google AI Studio) driven by a built-in system prompt that
+     * detects the source language and translates to the *other* language
+     * in the pair.
+     *
+     * Differences vs [buildLiveSetup]:
+     *  - No `translationConfig` (the model decides the target language
+     *    based on the source it detected).
+     *  - `responseModalities = ["TEXT"]` — the BILI presets output text
+     *    only (no audio echo). This keeps latency low and avoids the model
+     *    "parroting" the user's speech in the wrong language.
+     *  - `inputAudioTranscription` enabled so the original speech still
+     *    shows up in the secondary caption line.
+     *  - The system prompt is built-in; the user's custom prompt is
+     *    intentionally ignored (so they can't accidentally break the
+     *    bidirectional contract).
+     */
+    private fun buildBiliSetup(mode: AppSettings.Mode): JSONObject {
+        val (langA, langB) = when (mode) {
+            AppSettings.Mode.BILI_ZH_EN -> "Chinese (Mandarin)" to "English"
+            AppSettings.Mode.BILI_ZH_JP -> "Chinese (Mandarin)" to "Japanese"
+            else -> "Chinese" to "English"
+        }
+        val prompt = buildString {
+            append("You are a real-time simultaneous interpreter. ")
+            append("The user speaks either $langA or $langB. ")
+            append("Detect which language they are speaking, and translate to the OTHER language: ")
+            append("if they speak $langA, output $langB; if they speak $langB, output $langA.\n")
+            append("Rules:\n")
+            append("- Output ONLY the translation. No explanations, no preamble, no language tags.\n")
+            append("- Keep the translation natural and conversational, preserving tone and intent.\n")
+            append("- If the speech is partial or unclear, output the best partial translation you can.\n")
+            append("- Do not add quotation marks or any wrapper around the translation.\n")
+        }
+        return JSONObject().apply {
+            put("model", biliModel)
             put("generationConfig", JSONObject().apply {
-                put("responseModalities", JSONArray().apply { put("AUDIO") })
-                put("translationConfig", JSONObject().apply {
-                    put("targetLanguageCode", targetLang)
-                    put("echoTargetLanguage", echo)
-                })
+                put("responseModalities", JSONArray().apply { put("TEXT") })
             })
             put("inputAudioTranscription", JSONObject())
-            put("outputAudioTranscription", JSONObject())
+            // No outputAudioTranscription — the model's text parts already
+            // carry the translation, doubling up would just duplicate.
             put("contextWindowCompression", JSONObject().apply {
                 put("triggerTokens", "0")
                 put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
             })
-        }
-        val instruction = systemPrompt.trim()
-        if (instruction.isNotEmpty()) {
-            setup.put("systemInstruction", JSONObject().apply {
-                put("parts", JSONArray().apply { put(JSONObject().put("text", instruction)) })
+            put("systemInstruction", JSONObject().apply {
+                put("parts", JSONArray().apply { put(JSONObject().put("text", prompt)) })
             })
         }
-        val envelope = JSONObject().put("setup", setup).toString()
-        return socket.send(envelope)
     }
 
     private fun handleText(raw: String) {

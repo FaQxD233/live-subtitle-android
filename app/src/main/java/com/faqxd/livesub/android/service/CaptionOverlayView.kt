@@ -22,12 +22,15 @@ import com.faqxd.livesub.android.data.Languages
  *
  * Manages a floating overlay window added via [WindowManager] with
  * [WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY]. The window:
- *  - Is always-on-top, frameless, semi-transparent.
- *  - Can be dragged by touching the header row.
- *  - Can be resized by dragging the bottom-right corner handle.
+ *  - Is always-on-top, frameless, semi-transparent, with a drop shadow.
+ *  - Can be dragged by pressing anywhere on the card body (header,
+ *    divider area, output/input caption text) — mirroring the Windows
+ *    `eventFilter` installed on `card + output_edit + input_edit`.
+ *  - Can be resized from **any** of the four corner handles — mirroring
+ *    `hud_window.py:_TransparentSizeGrip` (4 QSizeGrips, one per corner).
  *  - Shows: status dot + text, target-language badge, close button,
- *    translated output (primary, scrollable), original input (secondary,
- *    scrollable), control bar (Toggle / Clear / Settings).
+ *    translated output (primary, scrollable, **bold**), original input
+ *    (secondary, scrollable, italic), control bar (Toggle / Clear / Settings).
  *
  * All public methods must be called on the main thread.
  */
@@ -57,6 +60,7 @@ class CaptionOverlayView(
 
     // ---- View references ----
     private lateinit var rootView: View
+    private lateinit var overlayRoot: View
     private lateinit var header: View
     private lateinit var statusDot: View
     private lateinit var statusTextView: TextView
@@ -70,7 +74,10 @@ class CaptionOverlayView(
     private lateinit var toggleBtn: Button
     private lateinit var clearBtn: Button
     private lateinit var settingsBtn: ImageButton
-    private lateinit var resizeHandle: ImageView
+    private lateinit var resizeTL: ImageView
+    private lateinit var resizeTR: ImageView
+    private lateinit var resizeBL: ImageView
+    private lateinit var resizeBR: ImageView
 
     private val windowManager: WindowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -80,6 +87,8 @@ class CaptionOverlayView(
     /** Minimum overlay dimensions in pixels. */
     private val minWidthPx: Int = (280 * density).toInt()
     private val minHeightPx: Int = (200 * density).toInt()
+    private val maxWidthPx: Int = (720 * density).toInt()
+    private val maxHeightPx: Int = (640 * density).toInt()
 
     private var layoutParams: WindowManager.LayoutParams = buildLayoutParams()
     private var attached = false
@@ -91,6 +100,7 @@ class CaptionOverlayView(
     fun init() {
         if (initialized) return
         rootView = View.inflate(context, R.layout.overlay_caption, null)
+        overlayRoot = rootView.findViewById(R.id.overlayRoot)
         header = rootView.findViewById(R.id.overlayHeader)
         statusDot = rootView.findViewById(R.id.overlayStatusDot)
         statusTextView = rootView.findViewById(R.id.overlayStatusText)
@@ -104,7 +114,10 @@ class CaptionOverlayView(
         toggleBtn = rootView.findViewById(R.id.overlayToggleBtn)
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
-        resizeHandle = rootView.findViewById(R.id.overlayResizeHandle)
+        resizeTL = rootView.findViewById(R.id.overlayResizeTL)
+        resizeTR = rootView.findViewById(R.id.overlayResizeTR)
+        resizeBL = rootView.findViewById(R.id.overlayResizeBL)
+        resizeBR = rootView.findViewById(R.id.overlayResizeBR)
 
         toggleBtn.setOnClickListener { callbacks.onToggleClicked() }
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
@@ -112,7 +125,7 @@ class CaptionOverlayView(
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
 
         installDragHandler()
-        installResizeHandler()
+        installResizeHandlers()
         applyStyle()
         initialized = true
     }
@@ -196,17 +209,29 @@ class CaptionOverlayView(
 
     /** Re-apply fontSize / opacity / showOriginal without re-inflating. */
     fun applyStyle() {
-        // Output font
+        // Output font: bold (mirrors `hud_window.py:apply_style` which sets
+        // `out_f.setBold(True)`). setTypeface preserves the bold style when
+        // only the size changes via setTextSize.
+        outputView.setTypeface(outputView.typeface, android.graphics.Typeface.BOLD)
         outputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, settings.fontSize.toFloat())
-        // Input font (60% of output)
+        // Input font (60% of output, italic)
+        inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
-        // Language badge
-        langBadge.text = "→ ${Languages.nameFor(settings.targetLanguage)}"
+        // Language badge — mode-dependent. In LIVE mode it's the
+        // unidirectional arrow `→ <target>`; in BILI modes it's the pair
+        // symbol `中 ↔ EN` / `中 ↔ JP` so the user can tell at a glance
+        // which preset is active.
+        langBadge.text = when (settings.modeEnum) {
+            AppSettings.Mode.LIVE -> "→ ${Languages.nameFor(settings.targetLanguage)}"
+            AppSettings.Mode.BILI_ZH_EN -> "中 ↔ EN"
+            AppSettings.Mode.BILI_ZH_JP -> "中 ↔ JP"
+        }
         // Original visibility
         val showOrig = settings.showOriginal
         divider.visibility = if (showOrig) View.VISIBLE else View.GONE
         inputScroll.visibility = if (showOrig) View.VISIBLE else View.GONE
-        // Card opacity: alpha is applied to the whole root view.
+        // Card opacity: alpha is applied to the whole root view. Keep it
+        // high enough that the drop shadow stays visible.
         val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
         rootView.alpha = alpha
         refreshStatus()
@@ -279,10 +304,11 @@ class CaptionOverlayView(
     }
 
     /**
-     * Drag the overlay by touching the header row. Returns true for
-     * ACTION_DOWN so we receive subsequent MOVE events. Buttons inside the
-     * header (close, settings) still work because they consume their own
-     * touches before the parent's OnTouchListener is consulted.
+     * Drag the overlay by pressing anywhere on the card body. Child buttons
+     * (Toggle / Clear / Settings / Close) and the four corner resize handles
+     * consume their own touches first, so this listener only fires when the
+     * user presses empty card area — same behavior as `hud_window.py`'s
+     * eventFilter on `card + output_edit + input_edit`.
      */
     private fun installDragHandler() {
         var initialX = 0
@@ -290,7 +316,7 @@ class CaptionOverlayView(
         var initialTouchX = 0f
         var initialTouchY = 0f
 
-        header.setOnTouchListener { _, event ->
+        val listener = View.OnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = layoutParams.x
@@ -311,31 +337,83 @@ class CaptionOverlayView(
                 else -> false
             }
         }
+        // Install on the whole card body + the header. ScrollView children
+        // (outputScroll / inputScroll) keep their own touch handling so the
+        // user can still scroll through caption history — same as the
+        // Windows version where QPlainTextEdit handled its own scroll while
+        // the eventFilter only kicked in on MouseButtonPress.
+        overlayRoot.setOnTouchListener(listener)
+        header.setOnTouchListener(listener)
     }
 
     /**
-     * Resize the overlay by dragging the bottom-right corner handle.
+     * Wire up the four corner resize handles. Each handle computes its own
+     * edge deltas based on which corner it represents (top-left: move xy +
+     * shrink wh; top-right: move y + grow w / shrink h; etc.) so the
+     * opposite corner stays anchored.
      */
-    private fun installResizeHandler() {
-        var initialWidth = 0
-        var initialHeight = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+    private fun installResizeHandlers() {
+        resizeTL.setOnTouchListener(makeResizeListener(corner = Corner.TOP_LEFT))
+        resizeTR.setOnTouchListener(makeResizeListener(corner = Corner.TOP_RIGHT))
+        resizeBL.setOnTouchListener(makeResizeListener(corner = Corner.BOTTOM_LEFT))
+        resizeBR.setOnTouchListener(makeResizeListener(corner = Corner.BOTTOM_RIGHT))
+    }
 
-        resizeHandle.setOnTouchListener { _, event ->
+    private enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+    private fun makeResizeListener(corner: Corner): View.OnTouchListener {
+        var initX = 0; var initY = 0
+        var initW = 0; var initH = 0
+        var startRawX = 0f; var startRawY = 0f
+
+        return View.OnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialWidth = layoutParams.width
-                    initialHeight = layoutParams.height
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
+                    initX = layoutParams.x
+                    initY = layoutParams.y
+                    initW = layoutParams.width
+                    initH = layoutParams.height
+                    startRawX = event.rawX
+                    startRawY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - initialTouchX).toInt()
-                    val dy = (event.rawY - initialTouchY).toInt()
-                    layoutParams.width = (initialWidth + dx).coerceAtLeast(minWidthPx)
-                    layoutParams.height = (initialHeight + dy).coerceAtLeast(minHeightPx)
+                    val dx = (event.rawX - startRawX).toInt()
+                    val dy = (event.rawY - startRawY).toInt()
+                    var newX = initX
+                    var newY = initY
+                    var newW = initW
+                    var newH = initH
+                    when (corner) {
+                        Corner.TOP_LEFT -> {
+                            // Anchor bottom-right: width/height shrink, x/y move.
+                            newW = (initW - dx).coerceIn(minWidthPx, maxWidthPx)
+                            newH = (initH - dy).coerceIn(minHeightPx, maxHeightPx)
+                            newX = initX + (initW - newW)
+                            newY = initY + (initH - newH)
+                        }
+                        Corner.TOP_RIGHT -> {
+                            // Anchor bottom-left: width grows, height shrinks, y moves.
+                            newW = (initW + dx).coerceIn(minWidthPx, maxWidthPx)
+                            newH = (initH - dy).coerceIn(minHeightPx, maxHeightPx)
+                            newY = initY + (initH - newH)
+                        }
+                        Corner.BOTTOM_LEFT -> {
+                            // Anchor top-right: width shrinks, height grows, x moves.
+                            newW = (initW - dx).coerceIn(minWidthPx, maxWidthPx)
+                            newH = (initH + dy).coerceIn(minHeightPx, maxHeightPx)
+                            newX = initX + (initW - newW)
+                        }
+                        Corner.BOTTOM_RIGHT -> {
+                            // Anchor top-left: only width/height grow.
+                            newW = (initW + dx).coerceIn(minWidthPx, maxWidthPx)
+                            newH = (initH + dy).coerceIn(minHeightPx, maxHeightPx)
+                        }
+                    }
+                    layoutParams.x = newX
+                    layoutParams.y = newY
+                    layoutParams.width = newW
+                    layoutParams.height = newH
                     try {
                         windowManager.updateViewLayout(rootView, layoutParams)
                     } catch (_: Exception) {}
