@@ -2,26 +2,29 @@
 <!--
     Floating caption overlay.
     Root is a transparent container; the inner `overlayRoot` card is the visible
-    "HUD". Drag handle / status row + output / input captions + control buttons.
+    "HUD". Header (drag handle) + scrollable output/input + control buttons +
+    resize handle at bottom-right corner.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
     <LinearLayout
         android:id="@+id/overlayRoot"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginBottom="20dp"
         android:background="@drawable/overlay_card_bg"
         android:elevation="12dp"
-        android:minWidth="320dp"
+        android:minWidth="280dp"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
         android:paddingVertical="12dp">
 
-        <!-- Header: status dot + status text + lang badge + drag hint -->
+        <!-- Header: status dot + status text + lang badge + close btn (also drag handle) -->
         <LinearLayout
+            android:id="@+id/overlayHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
@@ -54,20 +57,39 @@
                 android:textColor="#FFFFFF"
                 android:textSize="10sp"
                 android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/overlayCloseBtn"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/overlay_btn_secondary"
+                android:contentDescription="Close"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:tint="#FFFFFF" />
         </LinearLayout>
 
-        <!-- Translated output (primary) -->
-        <TextView
-            android:id="@+id/overlayOutput"
+        <!-- Translated output (primary, scrollable, fills remaining space) -->
+        <ScrollView
+            android:id="@+id/overlayOutputScroll"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="0dp"
             android:layout_marginTop="8dp"
-            android:fontFamily="sans-serif-medium"
-            android:maxLines="5"
-            android:text="—"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:scrollbars="vertical"
+            android:scrollbarFadeDuration="0">
+
+            <TextView
+                android:id="@+id/overlayOutput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:text="—"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </ScrollView>
 
         <!-- Divider -->
         <View
@@ -77,16 +99,24 @@
             android:layout_marginVertical="6dp"
             android:background="#1AFFFFFF" />
 
-        <!-- Original input (secondary) -->
-        <TextView
-            android:id="@+id/overlayInput"
+        <!-- Original input (secondary, scrollable, fixed height) -->
+        <ScrollView
+            android:id="@+id/overlayInputScroll"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:maxLines="3"
-            android:text=""
-            android:textColor="#B4FFFFFF"
-            android:textSize="12sp"
-            android:textStyle="italic" />
+            android:layout_height="80dp"
+            android:fillViewport="true"
+            android:scrollbars="vertical"
+            android:scrollbarFadeDuration="0">
+
+            <TextView
+                android:id="@+id/overlayInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#B4FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="italic" />
+        </ScrollView>
 
         <!-- Control bar -->
         <LinearLayout
@@ -134,4 +164,14 @@
                 android:tint="#FFFFFF" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- Resize handle (bottom-right corner, interactive) -->
+    <ImageView
+        android:id="@+id/overlayResizeHandle"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="bottom|end"
+        android:contentDescription="Resize"
+        android:padding="2dp"
+        android:src="@drawable/resize_handle" />
 </FrameLayout>

@@ -183,6 +183,12 @@ class LiveTranslateService : Service() {
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
                     }
+                    override fun onCloseClicked() {
+                        stopPipeline()
+                        overlay?.detach()
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
                 },
             )
         }
