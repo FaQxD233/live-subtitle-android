@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.service.LiveTranslateService
+import com.google.android.material.button.MaterialButton
 
 /**
  * Entry Activity.
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var hintText: TextView
     private lateinit var modeRadio: RadioGroup
     private lateinit var modeDesc: TextView
+    private lateinit var directionBtn: MaterialButton
 
     private var pendingStart = false
     private var serviceRunning = false
@@ -105,11 +107,13 @@ class MainActivity : AppCompatActivity() {
         hintText = findViewById(R.id.hintText)
         modeRadio = findViewById(R.id.modeRadio)
         modeDesc = findViewById(R.id.modeDesc)
+        directionBtn = findViewById(R.id.directionBtn)
 
         toggleBtn.setOnClickListener { onToggleClicked() }
         settingsBtn.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        directionBtn.setOnClickListener { onDirectionToggleClicked() }
 
         // The mode-radio listener is wired inside applySettingsToUi() so it
         // can be temporarily detached while we programmatically check the
@@ -137,16 +141,18 @@ class MainActivity : AppCompatActivity() {
                 modeRadio.check(R.id.modeLive)
             }
             AppSettings.Mode.BILI_ZH_EN -> {
-                langBadge.text = "中 ↔ EN"
-                modeDesc.text = "Detect Chinese / English and translate to the other."
+                langBadge.text = if (settings.biliDirection == "b2a") "EN → 中" else "中 → EN"
+                modeDesc.text = "Detect Chinese / English and translate to the other. Tap Swap to flip direction."
                 modeRadio.check(R.id.modeBiliZhEn)
             }
             AppSettings.Mode.BILI_ZH_JP -> {
-                langBadge.text = "中 ↔ JP"
-                modeDesc.text = "Detect Chinese / Japanese and translate to the other."
+                langBadge.text = if (settings.biliDirection == "b2a") "JP → 中" else "中 → JP"
+                modeDesc.text = "Detect Chinese / Japanese and translate to the other. Tap Swap to flip direction."
                 modeRadio.check(R.id.modeBiliZhJp)
             }
         }
+        // Direction swap button only makes sense in BILI modes.
+        directionBtn.visibility = if (settings.isBilingual) View.VISIBLE else View.GONE
         modeRadio.setOnCheckedChangeListener { _, checkedId ->
             val newMode = when (checkedId) {
                 R.id.modeBiliZhEn -> AppSettings.Mode.BILI_ZH_EN
@@ -205,6 +211,26 @@ class MainActivity : AppCompatActivity() {
             return
         }
         continueStartFlow()
+    }
+
+    /**
+     * Flip the BILI direction (a2b ↔ b2a), persist it, refresh the badge,
+     * and hot-restart the running pipeline so the new
+     * `translationConfig.targetLanguageCode` takes effect. No-op in LIVE
+     * mode — the swap button is hidden, but the click could still fire if
+     * the user changed mode without a re-layout.
+     */
+    private fun onDirectionToggleClicked() {
+        if (!settings.isBilingual) return
+        settings.biliDirection = if (settings.biliDirection == "b2a") "a2b" else "b2a"
+        settings.save(this)
+        applySettingsToUi()
+        if (serviceRunning) {
+            ContextCompat.startForegroundService(
+                this,
+                LiveTranslateService.restartIntent(this)
+            )
+        }
     }
 
     private fun continueStartFlow() {

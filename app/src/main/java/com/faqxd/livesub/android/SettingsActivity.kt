@@ -98,7 +98,8 @@ class SettingsActivity : AppCompatActivity() {
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
                 prev.systemPrompt != settings.systemPrompt ||
                 prev.mode != settings.mode ||
-                prev.biliModel != settings.biliModel
+                prev.biliModel != settings.biliModel ||
+                prev.biliDirection != settings.biliDirection
 
             if (affectsPipeline) {
                 // Forward a restart intent to the service. The service is

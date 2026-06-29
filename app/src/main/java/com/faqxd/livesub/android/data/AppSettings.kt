@@ -28,6 +28,10 @@ import androidx.core.content.edit
  *  - mode                — Pipeline preset, see [Mode].
  *  - biliModel           — Override model for BILI modes. Defaults to
  *                          [Mode.BILINGUAL_DEFAULT_MODEL].
+ *  - biliDirection       — Direction for BILI modes: "a2b" (langA→langB,
+ *                          e.g. 中→英) or "b2a" (langB→langA, e.g. 英→中).
+ *                          Toggling direction hot-restarts the pipeline
+ *                          with a different translationConfig.
  */
 data class AppSettings(
     var apiKey: String = "",
@@ -42,6 +46,7 @@ data class AppSettings(
     var showOriginal: Boolean = false,
     var mode: String = Mode.LIVE.id,
     var biliModel: String = Mode.BILINGUAL_DEFAULT_MODEL,
+    var biliDirection: String = "a2b",
 ) {
     /**
      * Pipeline preset selected from the main screen.
@@ -50,10 +55,13 @@ data class AppSettings(
      *   fixed `translationConfig.targetLanguageCode` (single-direction
      *   translate, source auto-detected). This is the original Windows/macOS
      *   behavior and is preserved unchanged.
-     * - [BILI_ZH_EN] / [BILI_ZH_JP] use a general-purpose Live model
-     *   (no `translationConfig`) driven by a built-in bidirectional system
-     *   prompt — the model listens, detects the source language, and
-     *   translates to the *other* language in the pair.
+     * - [BILI_ZH_EN] / [BILI_ZH_JP] use the same model but with a
+     *   user-toggleable direction (see [biliDirection]). Each direction
+     *   sets a different `translationConfig.targetLanguageCode` and
+     *   hot-restarts the pipeline. This is more reliable than relying on
+     *   a system prompt for bidirectional behavior — the translate model's
+     *   training bias makes it default to English without an explicit
+     *   translationConfig.
      */
     enum class Mode(val id: String, val label: String) {
         LIVE("live", "Live Translate"),
@@ -62,20 +70,15 @@ data class AppSettings(
 
         companion object {
             /**
-             * Default model for BILI modes. We reuse `gemini-3.5-live-translate-preview`
-             * (same as LIVE mode) — it's the only confirmed-existing Live
-             * API model on the free tier. The difference is BILI mode
-             * omits `translationConfig` and drives behavior via a built-in
-             * bidirectional system prompt instead.
+             * Default model for BILI modes. Same as LIVE mode — it's the
+             * only confirmed-existing Live API model on the free tier.
+             * BILI modes set `translationConfig.targetLanguageCode`
+             * dynamically based on [AppSettings.biliDirection].
              *
              * Other Live API model names tried and confirmed NOT to exist:
              *  - `gemini-3-flash-live`  (server: "not found for API version v1beta")
              *  - `gemini-2.0-flash-live` (server: "not found")
              *  - `gemini-2.5-flash-live-preview` (server: "not found")
-             *
-             * The "-live" suffix is reserved for Live API models, and as of
-             * mid-2026 only `gemini-3.5-live-translate-preview` is published
-             * on the Google AI Studio free tier.
              */
             const val BILINGUAL_DEFAULT_MODEL = "gemini-3.5-live-translate-preview"
             fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: LIVE
@@ -117,6 +120,7 @@ data class AppSettings(
                 showOriginal = prefs.getBoolean("show_original", false),
                 mode = prefs.getString("mode", Mode.LIVE.id) ?: Mode.LIVE.id,
                 biliModel = biliModel,
+                biliDirection = prefs.getString("bili_direction", "a2b") ?: "a2b",
             )
         }
 
@@ -159,6 +163,7 @@ data class AppSettings(
             putBoolean("show_original", showOriginal)
             putString("mode", mode)
             putString("bili_model", biliModel)
+            putString("bili_direction", biliDirection)
         }
     }
 }

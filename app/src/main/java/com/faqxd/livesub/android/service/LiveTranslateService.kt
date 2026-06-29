@@ -98,6 +98,25 @@ class LiveTranslateService : Service() {
         return START_STICKY
     }
 
+    /**
+     * Toggle BILI direction (a2b ↔ b2a), persist it, and hot-restart the
+     * pipeline so the new `translationConfig.targetLanguageCode` takes
+     * effect. No-op in LIVE mode.
+     */
+    private fun toggleDirection() {
+        val s = AppSettings.load(this)
+        if (!s.isBilingual) return
+        s.biliDirection = if (s.biliDirection == "b2a") "a2b" else "b2a"
+        s.save(this)
+        settings = s
+        overlay?.refreshDirection(s)
+        if (running) {
+            // Re-use the cached MediaProjection token if any, so system-audio
+            // mode doesn't need to re-prompt the user.
+            restartPipelineIfNeeded()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopPipeline()
@@ -140,6 +159,7 @@ class LiveTranslateService : Service() {
             apiBase = s.apiBase,
             mode = s.modeEnum,
             biliModel = s.biliModel,
+            biliDirection = s.biliDirection,
         )
 
         // Audio capture
@@ -247,6 +267,9 @@ class LiveTranslateService : Service() {
                         overlay?.detach()
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
+                    }
+                    override fun onToggleDirectionClicked() {
+                        toggleDirection()
                     }
                 },
             )

@@ -45,6 +45,8 @@ class CaptionOverlayView(
         fun onClearClicked()
         fun onSettingsClicked()
         fun onCloseClicked()
+        /** Fired when the user taps the BILI direction-swap button. No-op in LIVE mode. */
+        fun onToggleDirectionClicked()
     }
 
     // ---- Caption text state (mirrors HUDWindow._out_committed / _out_draft) ----
@@ -74,6 +76,7 @@ class CaptionOverlayView(
     private lateinit var toggleBtn: Button
     private lateinit var clearBtn: Button
     private lateinit var settingsBtn: ImageButton
+    private lateinit var biliDirectionBtn: Button
     private lateinit var resizeTL: ImageView
     private lateinit var resizeTR: ImageView
     private lateinit var resizeBL: ImageView
@@ -114,6 +117,7 @@ class CaptionOverlayView(
         toggleBtn = rootView.findViewById(R.id.overlayToggleBtn)
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
+        biliDirectionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
         resizeTL = rootView.findViewById(R.id.overlayResizeTL)
         resizeTR = rootView.findViewById(R.id.overlayResizeTR)
         resizeBL = rootView.findViewById(R.id.overlayResizeBL)
@@ -123,6 +127,7 @@ class CaptionOverlayView(
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
+        biliDirectionBtn.setOnClickListener { callbacks.onToggleDirectionClicked() }
 
         installDragHandler()
         installResizeHandlers()
@@ -217,15 +222,12 @@ class CaptionOverlayView(
         // Input font (60% of output, italic)
         inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
-        // Language badge — mode-dependent. In LIVE mode it's the
-        // unidirectional arrow `→ <target>`; in BILI modes it's the pair
-        // symbol `中 ↔ EN` / `中 ↔ JP` so the user can tell at a glance
-        // which preset is active.
-        langBadge.text = when (settings.modeEnum) {
-            AppSettings.Mode.LIVE -> "→ ${Languages.nameFor(settings.targetLanguage)}"
-            AppSettings.Mode.BILI_ZH_EN -> "中 ↔ EN"
-            AppSettings.Mode.BILI_ZH_JP -> "中 ↔ JP"
-        }
+        // Language badge + direction-swap button — mode-dependent.
+        // In LIVE mode the badge is the unidirectional arrow `→ <target>`
+        // and the swap button is hidden. In BILI modes the badge shows the
+        // current direction (`中 → EN` / `EN → 中` / `中 → JP` / `JP → 中`)
+        // and the swap button is visible so the user can flip direction.
+        updateDirectionUi(settings)
         // Original visibility
         val showOrig = settings.showOriginal
         divider.visibility = if (showOrig) View.VISIBLE else View.GONE
@@ -235,6 +237,25 @@ class CaptionOverlayView(
         val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
         rootView.alpha = alpha
         refreshStatus()
+    }
+
+    /**
+     * Update the lang badge + swap-button visibility after a direction
+     * toggle. Called by [LiveTranslateService.toggleDirection] with the
+     * freshly-persisted [AppSettings]. Lightweight: doesn't re-apply font
+     * sizes / opacity, just the badge text and button visibility.
+     */
+    fun refreshDirection(s: AppSettings) {
+        updateDirectionUi(s)
+    }
+
+    private fun updateDirectionUi(s: AppSettings) {
+        langBadge.text = when (s.modeEnum) {
+            AppSettings.Mode.LIVE -> "→ ${Languages.nameFor(s.targetLanguage)}"
+            AppSettings.Mode.BILI_ZH_EN -> if (s.biliDirection == "b2a") "EN → 中" else "中 → EN"
+            AppSettings.Mode.BILI_ZH_JP -> if (s.biliDirection == "b2a") "JP → 中" else "中 → JP"
+        }
+        biliDirectionBtn.visibility = if (s.isBilingual) View.VISIBLE else View.GONE
     }
 
     // ---------- internals ----------

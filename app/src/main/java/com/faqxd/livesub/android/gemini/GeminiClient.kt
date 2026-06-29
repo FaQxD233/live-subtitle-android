@@ -57,6 +57,7 @@ class GeminiClient(
     private var echo: Boolean = true
     private var mode: AppSettings.Mode = AppSettings.Mode.LIVE
     private var biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL
+    private var biliDirection: String = "a2b"
 
     fun configure(
         apiKey: String,
@@ -66,6 +67,7 @@ class GeminiClient(
         apiBase: String = DEFAULT_API_BASE,
         mode: AppSettings.Mode = AppSettings.Mode.LIVE,
         biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL,
+        biliDirection: String = "a2b",
     ) {
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
@@ -77,6 +79,7 @@ class GeminiClient(
         this.echo = echoTargetLanguage
         this.mode = mode
         this.biliModel = biliModel.ifBlank { AppSettings.Mode.BILINGUAL_DEFAULT_MODEL }
+        this.biliDirection = if (biliDirection == "b2a") "b2a" else "a2b"
     }
 
     /** Start a new session. No-op if already running. */
@@ -203,80 +206,44 @@ class GeminiClient(
     }
 
     /**
-     * Bidirectional translate setup — reuses the same model as LIVE mode
-     * (default `gemini-3.5-live-translate-preview`, the only confirmed-
-     * existing Live API model on the free tier) but:
-     *  - Omits `translationConfig` (which is single-direction by design).
-     *  - Uses a built-in bidirectional system prompt to make the model
-     *    auto-detect the source language and translate to the OTHER one.
+     * Bidirectional translate setup — uses the same model as LIVE mode
+     * (`gemini-3.5-live-translate-preview`) but with a user-toggleable
+     * direction. The model is single-direction by design (training bias
+     * makes it default to English), so instead of fighting the bias with
+     * a system prompt, we use `translationConfig.targetLanguageCode` to
+     * pin the target language. The user switches direction via a button
+     * in the overlay / main screen, which hot-restarts the pipeline with
+     * a different `targetLanguageCode`.
      *
-     * All other fields mirror [buildLiveSetup] exactly — same
-     * responseModalities, same transcription config, same context window
-     * compression — because this model + this field combination is
-     * already proven to work in LIVE mode. The only variables are the
-     * missing `translationConfig` and the different `systemInstruction`.
+     * Direction mapping:
+     *  - BILI_ZH_EN + "a2b" → 中→英 (targetLanguageCode = "en")
+     *  - BILI_ZH_EN + "b2a" → 英→中 (targetLanguageCode = "zh")
+     *  - BILI_ZH_JP + "a2b" → 中→日 (targetLanguageCode = "ja")
+     *  - BILI_ZH_JP + "b2a" → 日→中 (targetLanguageCode = "zh")
      *
-     * The model outputs audio (translation spoken in the target language).
-     * The service doesn't attach an AudioPlayer in BILI mode, so the audio
-     * is silently discarded; the overlay reads the translation from
-     * `outputAudioTranscription` (text form of the spoken translation).
+     * `echoTargetLanguage` is forced false in BILI mode — we don't want
+     * the model to "echo" if the user happens to speak the target language
+     * (e.g. user accidentally speaks English while in 中→英 mode); instead
+     * the model should still translate to English (effectively a no-op).
+     *
+     * The audio output is silently discarded (no AudioPlayer in BILI mode);
+     * the overlay reads the translation from `outputAudioTranscription`.
      */
     private fun buildBiliSetup(mode: AppSettings.Mode): JSONObject {
-        val langA: String
-        val langB: String
-        val examples: String
-        when (mode) {
-            AppSettings.Mode.BILI_ZH_EN -> {
-                langA = "Chinese (Mandarin)"; langB = "English"
-                examples = """
-                    |Examples (CRITICAL — study these carefully):
-                    |  User says "你好"        → You respond "Hello"
-                    |  User says "Hello"       → You respond "你好"
-                    |  User says "今天天气不错" → You respond "The weather is nice today"
-                    |  User says "How are you?" → You respond "你好吗？"
-                    |  User says "谢谢"        → You respond "Thank you"
-                    |  User says "Thank you"   → You respond "谢谢"
-                """.trimMargin()
-            }
-            AppSettings.Mode.BILI_ZH_JP -> {
-                langA = "Chinese (Mandarin)"; langB = "Japanese"
-                examples = """
-                    |Examples (CRITICAL — study these carefully):
-                    |  User says "你好"        → You respond "こんにちは"
-                    |  User says "こんにちは"   → You respond "你好"
-                    |  User says "今天天气不错" → You respond "今日はいい天気ですね"
-                    |  User says "元気ですか？" → You respond "你还好吗？"
-                    |  User says "谢谢"        → You respond "ありがとう"
-                    |  User says "ありがとう"   → You respond "谢谢"
-                """.trimMargin()
-            }
-            else -> {
-                langA = "Chinese (Mandarin)"; langB = "English"
-                examples = ""
-            }
-        }
-
-        val prompt = buildString {
-            append("You are a real-time simultaneous interpreter for a bilingual conversation between $langA and $langB.\n\n")
-            append("CRITICAL RULE — you MUST detect the source language of the user's speech and translate to the OPPOSITE language:\n")
-            append("  - If user speaks $langA, you MUST respond in $langB.\n")
-            append("  - If user speaks $langB, you MUST respond in $langA.\n\n")
-            append("ANTI-PATTERN WARNING — do NOT do these:\n")
-            append("  - DO NOT translate everything to $langB by default. That is WRONG.\n")
-            append("  - DO NOT echo the user's speech in the original language.\n")
-            append("  - DO NOT add language tags, explanations, or meta-commentary.\n\n")
-            append(examples)
-            append("\n\nOutput rules:\n")
-            append("  - Respond with ONLY the translation, spoken naturally in the target language.\n")
-            append("  - Keep the translation natural and conversational, preserving tone and intent.\n")
-            append("  - If the speech is partial or unclear, output the best partial translation you can.\n")
-            append("  - Detect source language on EVERY utterance, even if it switches mid-conversation.\n")
+        val tgtCode = when (mode) {
+            AppSettings.Mode.BILI_ZH_EN -> if (biliDirection == "b2a") "zh" else "en"
+            AppSettings.Mode.BILI_ZH_JP -> if (biliDirection == "b2a") "zh" else "ja"
+            else -> "en"
         }
 
         return JSONObject().apply {
             put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
             put("generationConfig", JSONObject().apply {
                 put("responseModalities", JSONArray().apply { put("AUDIO") })
+                put("translationConfig", JSONObject().apply {
+                    put("targetLanguageCode", tgtCode)
+                    put("echoTargetLanguage", false)
+                })
             })
             put("inputAudioTranscription", JSONObject())
             put("outputAudioTranscription", JSONObject())
@@ -284,9 +251,10 @@ class GeminiClient(
                 put("triggerTokens", "0")
                 put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
             })
-            put("systemInstruction", JSONObject().apply {
-                put("parts", JSONArray().apply { put(JSONObject().put("text", prompt)) })
-            })
+            // System prompt optional — translationConfig pins the target
+            // language, so we keep this minimal. If the user supplied a
+            // custom prompt in LIVE mode it's intentionally ignored here
+            // (BILI has its own contract).
         }
     }
 
