@@ -9,6 +9,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.SeekBar
 import android.widget.Spinner
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings

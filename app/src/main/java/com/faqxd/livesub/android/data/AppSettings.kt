@@ -116,12 +116,16 @@ data class AppSettings(
          * Map deprecated/legacy biliModel strings to their current
          * equivalents. Returns the input unchanged if no migration is
          * needed. Add new migrations here as defaults evolve.
+         *
+         * `Mode.BILINGUAL_DEFAULT_MODEL` is qualified with `Mode.` because
+         * the constant lives in the nested enum's companion object, not in
+         * this outer companion object's scope.
          */
         private fun migrateBiliModel(raw: String): String {
             return when (raw) {
-                "gemini-3.1-flash-live-preview" -> BILINGUAL_DEFAULT_MODEL
-                "gemini-2.5-flash-live-preview" -> BILINGUAL_DEFAULT_MODEL
-                "" -> BILINGUAL_DEFAULT_MODEL
+                "gemini-3.1-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
+                "gemini-2.5-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
+                "" -> Mode.BILINGUAL_DEFAULT_MODEL
                 else -> raw
             }
         }
