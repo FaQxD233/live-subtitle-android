@@ -62,21 +62,22 @@ data class AppSettings(
 
         companion object {
             /**
-             * Default model for BILI modes. `gemini-3-flash-live` is the
-             * free-tier Live API model on Google AI Studio / Cloud Console.
-             * It's a native-audio model, so BILI mode uses
-             * responseModalities=["AUDIO"] (TEXT-only is not supported
-             * on this model) and silently discards the audio output via
-             * `player?.enqueuePcm16()` being a no-op when no AudioPlayer
-             * is attached — only the `outputAudioTranscription` text is
-             * shown on the overlay.
+             * Default model for BILI modes. We reuse `gemini-3.5-live-translate-preview`
+             * (same as LIVE mode) — it's the only confirmed-existing Live
+             * API model on the free tier. The difference is BILI mode
+             * omits `translationConfig` and drives behavior via a built-in
+             * bidirectional system prompt instead.
              *
-             * Other valid choices users can enter in Settings:
-             *  - `gemini-2.5-flash-live` (older free-tier)
-             *  - `gemini-2.0-flash-live` (older free-tier)
-             *  - `gemini-2.5-flash-native-audio-dialog` (paid)
+             * Other Live API model names tried and confirmed NOT to exist:
+             *  - `gemini-3-flash-live`  (server: "not found for API version v1beta")
+             *  - `gemini-2.0-flash-live` (server: "not found")
+             *  - `gemini-2.5-flash-live-preview` (server: "not found")
+             *
+             * The "-live" suffix is reserved for Live API models, and as of
+             * mid-2026 only `gemini-3.5-live-translate-preview` is published
+             * on the Google AI Studio free tier.
              */
-            const val BILINGUAL_DEFAULT_MODEL = "gemini-3-flash-live"
+            const val BILINGUAL_DEFAULT_MODEL = "gemini-3.5-live-translate-preview"
             fun fromId(id: String?): Mode = entries.firstOrNull { it.id == id } ?: LIVE
         }
     }
@@ -127,18 +128,16 @@ data class AppSettings(
          * `Mode.BILINGUAL_DEFAULT_MODEL` is qualified with `Mode.` because
          * the constant lives in the nested enum's companion object, not in
          * this outer companion object's scope.
-         *
-         * Note: only migrate values that were *never* valid model names.
-         * Don't migrate between real model names (e.g. gemini-2.0-flash-live
-         * to gemini-3-flash-live) — the user may have picked the older one
-         * on purpose for stability / quota reasons.
          */
         private fun migrateBiliModel(raw: String): String {
             return when (raw) {
-                // Placeholder names that were briefly shipped but never
-                // corresponded to real models. Migrate to the current default.
-                "gemini-3.1-flash-live-preview",
-                "gemini-2.5-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
+                // Model names that were temporarily shipped as defaults but
+                // don't exist on the API. Migrate to the current default.
+                "gemini-3-flash-live",
+                "gemini-2.0-flash-live",
+                "gemini-2.5-flash-live",
+                "gemini-2.5-flash-live-preview",
+                "gemini-3.1-flash-live-preview" -> Mode.BILINGUAL_DEFAULT_MODEL
                 "" -> Mode.BILINGUAL_DEFAULT_MODEL
                 else -> raw
             }
