@@ -99,21 +99,48 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Toggle BILI direction (a2b ↔ b2a), persist it, and hot-restart the
-     * pipeline so the new `translationConfig.targetLanguageCode` takes
+     * Toggle BILI direction (a2b ↔ b2a), persist it, and force a pipeline
+     * restart so the new `translationConfig.targetLanguageCode` takes
      * effect. No-op in LIVE mode.
+     *
+     * The restart is **forced** (bypasses the `running` guard in
+     * [restartPipelineIfNeeded]) because the pipeline may have died —
+     * e.g. the WebSocket disconnected and [onDisconnected] flipped
+     * `running` to false — while the overlay is still on screen. In that
+     * state the user still expects the direction button to do something,
+     * so we tear down whatever's left and start fresh with the new
+     * direction.
      */
     private fun toggleDirection() {
         val s = AppSettings.load(this)
-        if (!s.isBilingual) return
+        Log.i(TAG, "toggleDirection: mode=${s.modeEnum} prevDir=${s.biliDirection} running=$running")
+        if (!s.isBilingual) {
+            Log.w(TAG, "toggleDirection: not bilingual, ignoring")
+            return
+        }
         s.biliDirection = if (s.biliDirection == "b2a") "a2b" else "b2a"
         s.save(this)
         settings = s
         overlay?.refreshDirection(s)
-        if (running) {
-            // Re-use the cached MediaProjection token if any, so system-audio
-            // mode doesn't need to re-prompt the user.
-            restartPipelineIfNeeded()
+        Log.i(TAG, "toggleDirection: newDir=${s.biliDirection} — forcing pipeline restart")
+        // Force restart regardless of running state. Re-use the cached
+        // MediaProjection token if any, so system-audio mode doesn't need
+        // to re-prompt the user.
+        stopPipeline()
+        scope.launch {
+            delay(300)
+            val latest = AppSettings.load(this@LiveTranslateService)
+            val useSystem = latest.audioSource == "system" && lastResultData != null
+            startForegroundIfNeeded(useSystemAudio = useSystem)
+            try {
+                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
+                if (latest.audioSource == "system" && !useSystem) {
+                    overlay?.setStatus("System audio needs re-grant; using mic")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "restart after direction toggle failed", e)
+                overlay?.setStatus("Restart failed: ${e.message}")
+            }
         }
     }
 
@@ -276,6 +303,11 @@ class LiveTranslateService : Service() {
         }
         overlay?.init()
         overlay?.applyStyle()
+        // applyStyle() reads the *constructor-time* settings, which may be
+        // stale if the user switched mode (LIVE → BILI) without the overlay
+        // being re-created. refreshDirection(s) applies the latest settings
+        // so the swap button shows up in BILI mode even after a hot restart.
+        overlay?.refreshDirection(s)
         try {
             overlay?.attach()
         } catch (e: Exception) {

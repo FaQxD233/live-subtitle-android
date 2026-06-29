@@ -127,7 +127,10 @@ class CaptionOverlayView(
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
-        biliDirectionBtn.setOnClickListener { callbacks.onToggleDirectionClicked() }
+        biliDirectionBtn.setOnClickListener {
+            android.util.Log.i("CaptionOverlay", "direction swap button clicked")
+            callbacks.onToggleDirectionClicked()
+        }
 
         installDragHandler()
         installResizeHandlers()

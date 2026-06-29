@@ -235,6 +235,7 @@ class GeminiClient(
             AppSettings.Mode.BILI_ZH_JP -> if (biliDirection == "b2a") "zh" else "ja"
             else -> "en"
         }
+        Log.i(TAG, "buildBiliSetup: mode=$mode direction=$biliDirection targetLanguageCode=$tgtCode")
 
         return JSONObject().apply {
             put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
