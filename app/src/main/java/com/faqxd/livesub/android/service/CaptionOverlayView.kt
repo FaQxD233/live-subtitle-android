@@ -45,7 +45,7 @@ class CaptionOverlayView(
         fun onClearClicked()
         fun onSettingsClicked()
         fun onCloseClicked()
-        /** Fired when the user taps the BILI direction-swap button. No-op in LIVE mode. */
+        /** Fired when the user taps the Live direction-swap button. */
         fun onToggleDirectionClicked()
     }
 
@@ -76,7 +76,7 @@ class CaptionOverlayView(
     private lateinit var toggleBtn: Button
     private lateinit var clearBtn: Button
     private lateinit var settingsBtn: ImageButton
-    private lateinit var biliDirectionBtn: Button
+    private lateinit var directionBtn: Button
     private lateinit var resizeTL: ImageView
     private lateinit var resizeTR: ImageView
     private lateinit var resizeBL: ImageView
@@ -117,7 +117,7 @@ class CaptionOverlayView(
         toggleBtn = rootView.findViewById(R.id.overlayToggleBtn)
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
-        biliDirectionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
+        directionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
         resizeTL = rootView.findViewById(R.id.overlayResizeTL)
         resizeTR = rootView.findViewById(R.id.overlayResizeTR)
         resizeBL = rootView.findViewById(R.id.overlayResizeBL)
@@ -127,7 +127,7 @@ class CaptionOverlayView(
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
-        biliDirectionBtn.setOnClickListener {
+        directionBtn.setOnClickListener {
             android.util.Log.i("CaptionOverlay", "direction swap button clicked")
             callbacks.onToggleDirectionClicked()
         }
@@ -223,11 +223,7 @@ class CaptionOverlayView(
         // Input font (60% of output, italic)
         inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
-        // Language badge + direction-swap button — mode-dependent.
-        // In LIVE mode the badge is the unidirectional arrow `→ <target>`
-        // and the swap button is hidden. In BILI modes the badge shows the
-        // current direction (`中 → EN` / `EN → 中` / `中 → JP` / `JP → 中`)
-        // and the swap button is visible so the user can flip direction.
+        // Language badge + direction-swap button.
         updateDirectionUi(settings)
         // Original visibility
         val showOrig = settings.showOriginal
@@ -241,10 +237,9 @@ class CaptionOverlayView(
     }
 
     /**
-     * Update the lang badge + swap-button visibility after a direction
-     * toggle. Called by [LiveTranslateService.toggleDirection] with the
-     * freshly-persisted [AppSettings]. Lightweight: doesn't re-apply font
-     * sizes / opacity, just the badge text and button visibility.
+     * Update the lang badge after a direction toggle. Called by
+     * [LiveTranslateService.toggleDirection] with the freshly-persisted
+     * [AppSettings]. Lightweight: doesn't re-apply font sizes / opacity.
      */
     fun refreshDirection(s: AppSettings) {
         updateDirectionUi(s)
@@ -260,12 +255,14 @@ class CaptionOverlayView(
     }
 
     private fun updateDirectionUi(s: AppSettings) {
-        langBadge.text = when (s.modeEnum) {
-            AppSettings.Mode.LIVE -> "→ ${Languages.nameFor(s.targetLanguage)}"
-            AppSettings.Mode.BILI_ZH_EN -> if (s.biliDirection == "b2a") "EN → 中" else "中 → EN"
-            AppSettings.Mode.BILI_ZH_JP -> if (s.biliDirection == "b2a") "JP → 中" else "中 → JP"
+        val target = s.normalizedTargetLanguage
+        langBadge.text = if (target == AppSettings.SIMPLIFIED_CHINESE) {
+            "→ ${Languages.shortNameFor(target)}"
+        } else {
+            val targetName = Languages.shortNameFor(target)
+            if (s.liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
         }
-        biliDirectionBtn.visibility = if (s.isBilingual) View.VISIBLE else View.GONE
+        directionBtn.visibility = View.VISIBLE
     }
 
     // ---------- internals ----------

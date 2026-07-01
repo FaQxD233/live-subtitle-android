@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
-import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -47,8 +46,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggleBtn: Button
     private lateinit var settingsBtn: Button
     private lateinit var hintText: TextView
-    private lateinit var modeRadio: RadioGroup
-    private lateinit var modeDesc: TextView
     private lateinit var directionBtn: MaterialButton
 
     private var pendingStart = false
@@ -113,8 +110,6 @@ class MainActivity : AppCompatActivity() {
         toggleBtn = findViewById(R.id.toggleBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
         hintText = findViewById(R.id.hintText)
-        modeRadio = findViewById(R.id.modeRadio)
-        modeDesc = findViewById(R.id.modeDesc)
         directionBtn = findViewById(R.id.directionBtn)
 
         toggleBtn.setOnClickListener { onToggleClicked() }
@@ -123,9 +118,6 @@ class MainActivity : AppCompatActivity() {
         }
         directionBtn.setOnClickListener { onDirectionToggleClicked() }
 
-        // The mode-radio listener is wired inside applySettingsToUi() so it
-        // can be temporarily detached while we programmatically check the
-        // right button on resume / settings reload.
         applySettingsToUi()
     }
 
@@ -145,49 +137,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySettingsToUi() {
-        // Mode-dependent UI: language badge + description + radio check.
-        // The radio listener is silenced while we programmatically check
-        // the right button so loading settings from disk doesn't fire a
-        // spurious restart.
-        modeRadio.setOnCheckedChangeListener(null)
-        when (settings.modeEnum) {
-            AppSettings.Mode.LIVE -> {
-                langBadge.text = "→ ${Languages.nameFor(settings.targetLanguage)}"
-                modeDesc.text = "Auto-detect source → translate to target language."
-                modeRadio.check(R.id.modeLive)
-            }
-            AppSettings.Mode.BILI_ZH_EN -> {
-                langBadge.text = if (settings.biliDirection == "b2a") "EN → 中" else "中 → EN"
-                modeDesc.text = "Detect Chinese / English and translate to the other. Tap Swap to flip direction."
-                modeRadio.check(R.id.modeBiliZhEn)
-            }
-            AppSettings.Mode.BILI_ZH_JP -> {
-                langBadge.text = if (settings.biliDirection == "b2a") "JP → 中" else "中 → JP"
-                modeDesc.text = "Detect Chinese / Japanese and translate to the other. Tap Swap to flip direction."
-                modeRadio.check(R.id.modeBiliZhJp)
-            }
-        }
-        // Direction swap button only makes sense in BILI modes.
-        directionBtn.visibility = if (settings.isBilingual) View.VISIBLE else View.GONE
-        modeRadio.setOnCheckedChangeListener { _, checkedId ->
-            val newMode = when (checkedId) {
-                R.id.modeBiliZhEn -> AppSettings.Mode.BILI_ZH_EN
-                R.id.modeBiliZhJp -> AppSettings.Mode.BILI_ZH_JP
-                else -> AppSettings.Mode.LIVE
-            }
-            if (newMode.id != settings.mode) {
-                settings.mode = newMode.id
-                settings.save(this)
-                applySettingsToUi()
-                if (LiveTranslateService.isPipelineRunning()) {
-                    ContextCompat.startForegroundService(
-                        this,
-                        LiveTranslateService.restartIntent(this)
-                    )
-                }
-            }
-        }
-
+        langBadge.text = directionLabel(settings)
+        directionBtn.visibility = View.VISIBLE
         inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
         if (settings.apiKey.isBlank()) {
             showHint(getString(R.string.err_no_api_key))
@@ -231,15 +182,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Flip the BILI direction (a2b ↔ b2a), persist it, refresh the badge,
-     * and hot-restart the running pipeline so the new
-     * `translationConfig.targetLanguageCode` takes effect. No-op in LIVE
-     * mode — the swap button is hidden, but the click could still fire if
-     * the user changed mode without a re-layout.
+     * Flip Live direction (Chinese → target vs target → Chinese), persist it,
+     * refresh the badge, and hot-restart the running pipeline so the new
+     * `translationConfig.targetLanguageCode` takes effect.
      */
     private fun onDirectionToggleClicked() {
-        if (!settings.isBilingual) return
-        settings.biliDirection = if (settings.biliDirection == "b2a") "a2b" else "b2a"
+        settings.liveDirection = if (settings.liveDirection == "b2a") "a2b" else "b2a"
         settings.save(this)
         applySettingsToUi()
         if (LiveTranslateService.isPipelineRunning()) {
@@ -248,6 +196,15 @@ class MainActivity : AppCompatActivity() {
                 LiveTranslateService.restartIntent(this)
             )
         }
+    }
+
+    private fun directionLabel(s: AppSettings): String {
+        val target = s.normalizedTargetLanguage
+        if (target == AppSettings.SIMPLIFIED_CHINESE) {
+            return "→ ${Languages.nameFor(target)}"
+        }
+        val targetName = Languages.shortNameFor(target)
+        return if (s.liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
     }
 
     private fun continueStartFlow() {

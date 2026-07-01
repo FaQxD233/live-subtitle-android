@@ -32,4 +32,10 @@ object Languages {
 
     fun nameFor(code: String): String =
         ALL.firstOrNull { it.code == code }?.name ?: code.uppercase()
+
+    fun shortNameFor(code: String): String =
+        when (code) {
+            "zh-CN" -> "中"
+            else -> code.substringBefore('-').uppercase()
+        }
 }

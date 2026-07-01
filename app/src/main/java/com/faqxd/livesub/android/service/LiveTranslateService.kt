@@ -129,30 +129,17 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Toggle BILI direction (a2b ↔ b2a), persist it, and force a pipeline
-     * restart so the new `translationConfig.targetLanguageCode` takes
-     * effect. No-op in LIVE mode.
-     *
-     * The restart is **forced** (bypasses the `running` guard in
-     * [restartPipelineIfNeeded]) because the pipeline may have died —
-     * e.g. the WebSocket disconnected and [onDisconnected] flipped
-     * `running` to false — while the overlay is still on screen. In that
-     * state the user still expects the direction button to do something,
-     * so we tear down whatever's left and start fresh with the new
-     * direction.
+     * Toggle Live direction (a2b ↔ b2a), persist it, and force a pipeline
+     * restart so the new `translationConfig.targetLanguageCode` takes effect.
      */
     private fun toggleDirection() {
         val s = AppSettings.load(this)
-        Log.i(TAG, "toggleDirection: mode=${s.modeEnum} prevDir=${s.biliDirection} running=$running")
-        if (!s.isBilingual) {
-            Log.w(TAG, "toggleDirection: not bilingual, ignoring")
-            return
-        }
-        s.biliDirection = if (s.biliDirection == "b2a") "a2b" else "b2a"
+        Log.i(TAG, "toggleDirection: prevDir=${s.liveDirection} running=$running")
+        s.liveDirection = if (s.liveDirection == "b2a") "a2b" else "b2a"
         s.save(this)
         settings = s
         overlay?.refreshDirection(s)
-        Log.i(TAG, "toggleDirection: newDir=${s.biliDirection} — forcing pipeline restart")
+        Log.i(TAG, "toggleDirection: newDir=${s.liveDirection} — forcing pipeline restart")
         // Force restart regardless of running state. Re-use the cached
         // MediaProjection token if any, so system-audio mode doesn't need
         // to re-prompt the user.
@@ -207,9 +194,8 @@ class LiveTranslateService : Service() {
             return
         }
 
-        // Player (echo). BILI modes intentionally keep playback disabled;
-        // captions are read from output transcription only.
-        val wantEcho = s.echoTargetLanguage && !s.isBilingual
+        // Player (echo).
+        val wantEcho = s.echoTargetLanguage
         if (wantEcho) {
             try {
                 val p = AudioPlayer(gain = s.playbackVolume).also { player = it }
@@ -228,13 +214,11 @@ class LiveTranslateService : Service() {
         val c = GeminiClient(listener = createClientListener(sessionId)).also { client = it }
         c.configure(
             apiKey = s.apiKey,
-            targetLang = s.targetLanguage,
+            targetLang = s.effectiveTargetLanguage,
             systemPrompt = s.systemPrompt,
             echoTargetLanguage = s.echoTargetLanguage,
             apiBase = s.apiBase,
-            mode = s.modeEnum,
-            biliModel = s.biliModel,
-            biliDirection = s.biliDirection,
+            liveModel = s.liveModel,
         )
 
         running = true
@@ -456,10 +440,8 @@ class LiveTranslateService : Service() {
         // without re-creating the overlay.
         overlay?.updateSettings(s)
         overlay?.applyStyle()
-        // applyStyle() reads the *constructor-time* settings, which may be
-        // stale if the user switched mode (LIVE → BILI) without the overlay
-        // being re-created. refreshDirection(s) applies the latest settings
-        // so the swap button shows up in BILI mode even after a hot restart.
+        // refreshDirection(s) applies the latest target/direction after a
+        // hot restart without re-creating the overlay.
         overlay?.refreshDirection(s)
         try {
             overlay?.attach()

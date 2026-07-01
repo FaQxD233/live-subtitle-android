@@ -9,6 +9,8 @@
 - Gemini Live WebSocket 实时翻译
 - 可选 TTS 回放（24 kHz Float32）
 - 16 种目标语言
+- Live 模型可配置
+- Live 方向可一键切换（简体中文 ↔ 目标语言）
 - API Base URL 可自定义（走代理或自建中转）
 - 配置持久化（SharedPreferences）
 
@@ -70,6 +72,7 @@ gradle installDebug
 2. 进入 **Settings**：
    - 填入 Gemini API Key（[在 Google AI Studio 申请](https://aistudio.google.com/apikey)）
    - 选择目标语言（默认简体中文）
+   - 按需修改 Live Model（默认 `gemini-3.5-live-translate-preview`）
    - 选择音源：
      - **Microphone** — 直接采集麦克风
      - **System audio (loopback)** — 通过 MediaProjection 捕获系统输出（屏幕录制权限，只录音频）
@@ -88,7 +91,8 @@ gradle installDebug
 - **拖动**：按住字幕条任意位置拖到任意位置
 - **缩放**：拖动四角缩放手柄调整浮窗大小
 - **状态指示**：左上角圆点颜色对应状态（灰色=空闲，黄色=连接中，绿色=已连接，红色=错误）
-- **目标语言徽章**：右上角显示当前翻译目标语言
+- **目标语言徽章**：右上角显示当前翻译方向
+- **方向切换**：点击 **Swap Direction** / **⇄** 在“简体中文 → 目标语言”和“目标语言 → 简体中文”之间切换
 - **主字幕区**：翻译结果，最多保留 5 行
 - **原文区**：可选显示源语言原文（在 Settings 中开启）
 - **控制条**：Pause/Start · Clear · Settings

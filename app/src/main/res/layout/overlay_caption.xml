@@ -65,9 +65,7 @@
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
-            <!-- BILI direction swap button. Visibility is toggled in
-                 CaptionOverlayView based on whether the active mode is
-                 bidirectional. Hidden in LIVE mode. -->
+            <!-- Live direction swap button. -->
             <Button
                 android:id="@+id/overlayDirectionBtn"
                 android:layout_width="28dp"
@@ -79,8 +77,7 @@
                 android:text="⇄"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:textStyle="bold" />
 
             <ImageButton
                 android:id="@+id/overlayCloseBtn"

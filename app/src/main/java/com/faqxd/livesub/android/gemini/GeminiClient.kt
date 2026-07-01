@@ -22,11 +22,9 @@ import java.util.concurrent.TimeUnit
  * the supplied listener (already on OkHttp's worker thread — callers should
  * hop to the main thread before touching UI).
  *
- * Two pipeline presets are supported via [configure]:
- *  - [AppSettings.Mode.LIVE] — `gemini-3.5-live-translate-preview` with a
- *    fixed `translationConfig.targetLanguageCode` (single-direction).
- *  - [AppSettings.Mode.BILI_ZH_EN] / [BILI_ZH_JP] — the same Live translate
- *    setup with a user-toggleable `translationConfig.targetLanguageCode`.
+ * The Live translate setup uses a configurable model and a fixed
+ * `translationConfig.targetLanguageCode`. Direction swapping is implemented
+ * by restarting the session with a different target language.
  */
 class GeminiClient(
     private val listener: Listener,
@@ -51,9 +49,7 @@ class GeminiClient(
     private var targetLang: String = "es"
     private var systemPrompt: String = ""
     private var echo: Boolean = true
-    private var mode: AppSettings.Mode = AppSettings.Mode.LIVE
-    private var biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL
-    private var biliDirection: String = "a2b"
+    private var liveModel: String = AppSettings.DEFAULT_LIVE_MODEL
 
     fun configure(
         apiKey: String,
@@ -61,21 +57,14 @@ class GeminiClient(
         systemPrompt: String,
         echoTargetLanguage: Boolean,
         apiBase: String = DEFAULT_API_BASE,
-        mode: AppSettings.Mode = AppSettings.Mode.LIVE,
-        biliModel: String = AppSettings.Mode.BILINGUAL_DEFAULT_MODEL,
-        biliDirection: String = "a2b",
+        liveModel: String = AppSettings.DEFAULT_LIVE_MODEL,
     ) {
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
         this.targetLang = AppSettings.normalizeTargetLanguage(targetLang)
-        // In BILI modes the system prompt is built-in and the user's
-        // custom prompt is ignored — keep it stored anyway so switching
-        // back to LIVE mode restores the user's preference.
         this.systemPrompt = systemPrompt
         this.echo = echoTargetLanguage
-        this.mode = mode
-        this.biliModel = biliModel.ifBlank { AppSettings.Mode.BILINGUAL_DEFAULT_MODEL }
-        this.biliDirection = if (biliDirection == "b2a") "b2a" else "a2b"
+        this.liveModel = liveModel.trim().ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
     }
 
     /** Start a new session. No-op if already running. */
@@ -186,27 +175,22 @@ class GeminiClient(
     }
 
     private fun sendSetup(socket: WebSocket): Boolean {
-        val setup = when (mode) {
-            AppSettings.Mode.LIVE -> buildLiveSetup()
-            AppSettings.Mode.BILI_ZH_EN, AppSettings.Mode.BILI_ZH_JP -> buildBiliSetup(mode)
-        }
+        val setup = buildLiveSetup()
         val envelope = JSONObject().put("setup", setup).toString()
-        Log.i(TAG, "sendSetup mode=$mode model=${setup.optString("model")} modality=${
+        Log.i(TAG, "sendSetup model=${setup.optString("model")} target=$targetLang modality=${
             setup.optJSONObject("generationConfig")?.optJSONArray("responseModalities")
         }")
         return socket.send(envelope)
     }
 
     /**
-     * Original unidirectional translate setup — uses the
-     * `gemini-3.5-live-translate-preview` model with a fixed
-     * `translationConfig.targetLanguageCode`. The user's custom
-     * `systemPrompt` is forwarded as `systemInstruction` if non-empty.
-     * `responseModalities = ["AUDIO"]` so the model can echo the translated
-     * speech back when `echoTargetLanguage` is true.
+     * Live translate setup with a fixed `translationConfig.targetLanguageCode`.
+     * The user's custom `systemPrompt` is forwarded as `systemInstruction`
+     * if non-empty. `responseModalities = ["AUDIO"]` so the model can echo
+     * the translated speech back when `echoTargetLanguage` is true.
      */
     private fun buildLiveSetup(): JSONObject = JSONObject().apply {
-        put("model", GEMINI_MODEL)
+        put("model", modelResourceName(liveModel))
         put("generationConfig", JSONObject().apply {
             put("responseModalities", JSONArray().apply { put("AUDIO") })
             put("translationConfig", JSONObject().apply {
@@ -225,60 +209,6 @@ class GeminiClient(
             put("systemInstruction", JSONObject().apply {
                 put("parts", JSONArray().apply { put(JSONObject().put("text", instruction)) })
             })
-        }
-    }
-
-    /**
-     * Bidirectional translate setup — uses the same model as LIVE mode
-     * (`gemini-3.5-live-translate-preview`) but with a user-toggleable
-     * direction. The model is single-direction by design (training bias
-     * makes it default to English), so instead of fighting the bias with
-     * a system prompt, we use `translationConfig.targetLanguageCode` to
-     * pin the target language. The user switches direction via a button
-     * in the overlay / main screen, which hot-restarts the pipeline with
-     * a different `targetLanguageCode`.
-     *
-     * Direction mapping:
-     *  - BILI_ZH_EN + "a2b" → 中→英 (targetLanguageCode = "en")
-     *  - BILI_ZH_EN + "b2a" → 英→中 (targetLanguageCode = "zh-CN")
-     *  - BILI_ZH_JP + "a2b" → 中→日 (targetLanguageCode = "ja")
-     *  - BILI_ZH_JP + "b2a" → 日→中 (targetLanguageCode = "zh-CN")
-     *
-     * `echoTargetLanguage` is forced false in BILI mode — we don't want
-     * the model to "echo" if the user happens to speak the target language
-     * (e.g. user accidentally speaks English while in 中→英 mode); instead
-     * the model should still translate to English (effectively a no-op).
-     *
-     * The audio output is silently discarded (no AudioPlayer in BILI mode);
-     * the overlay reads the translation from `outputAudioTranscription`.
-     */
-    private fun buildBiliSetup(mode: AppSettings.Mode): JSONObject {
-        val tgtCode = when (mode) {
-            AppSettings.Mode.BILI_ZH_EN -> if (biliDirection == "b2a") "zh-CN" else "en"
-            AppSettings.Mode.BILI_ZH_JP -> if (biliDirection == "b2a") "zh-CN" else "ja"
-            else -> "en"
-        }
-        Log.i(TAG, "buildBiliSetup: mode=$mode direction=$biliDirection targetLanguageCode=$tgtCode")
-
-        return JSONObject().apply {
-            put("model", if (biliModel.startsWith("models/")) biliModel else "models/$biliModel")
-            put("generationConfig", JSONObject().apply {
-                put("responseModalities", JSONArray().apply { put("AUDIO") })
-                put("translationConfig", JSONObject().apply {
-                    put("targetLanguageCode", tgtCode)
-                    put("echoTargetLanguage", false)
-                })
-            })
-            put("inputAudioTranscription", JSONObject())
-            put("outputAudioTranscription", JSONObject())
-            put("contextWindowCompression", JSONObject().apply {
-                put("triggerTokens", "0")
-                put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
-            })
-            // System prompt optional — translationConfig pins the target
-            // language, so we keep this minimal. If the user supplied a
-            // custom prompt in LIVE mode it's intentionally ignored here
-            // (BILI has its own contract).
         }
     }
 
@@ -352,6 +282,9 @@ class GeminiClient(
         if (content.optBoolean("interrupted", false)) Log.v(TAG, "interrupted")
     }
 
+    private fun modelResourceName(model: String): String =
+        if (model.startsWith("models/")) model else "models/$model"
+
     companion object {
         private const val TAG = "GeminiClient"
         private val client: OkHttpClient = OkHttpClient.Builder()
@@ -361,6 +294,5 @@ class GeminiClient(
         const val DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
         private const val GEMINI_WS_PATH =
             "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
-        private const val GEMINI_MODEL = "models/gemini-3.5-live-translate-preview"
     }
 }

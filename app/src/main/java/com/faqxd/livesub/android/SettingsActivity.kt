@@ -36,10 +36,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var fontSlider: SeekBar
     private lateinit var opacitySlider: SeekBar
     private lateinit var showOriginalCheck: CheckBox
-    private lateinit var promptLabel: TextView
     private lateinit var promptEdit: EditText
-    private lateinit var biliModelLabel: TextView
-    private lateinit var biliModelEdit: EditText
+    private lateinit var modelLabel: TextView
+    private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
     private lateinit var cancelBtn: Button
 
@@ -64,10 +63,9 @@ class SettingsActivity : AppCompatActivity() {
         fontSlider = findViewById(R.id.fontSlider)
         opacitySlider = findViewById(R.id.opacitySlider)
         showOriginalCheck = findViewById(R.id.showOriginalCheck)
-        promptLabel = findViewById(R.id.promptLabel)
         promptEdit = findViewById(R.id.promptEdit)
-        biliModelLabel = findViewById(R.id.biliModelLabel)
-        biliModelEdit = findViewById(R.id.biliModelEdit)
+        modelLabel = findViewById(R.id.modelLabel)
+        modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
         cancelBtn = findViewById(R.id.cancelBtn)
 
@@ -97,9 +95,8 @@ class SettingsActivity : AppCompatActivity() {
                 prev.audioSource != settings.audioSource ||
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
                 prev.systemPrompt != settings.systemPrompt ||
-                prev.mode != settings.mode ||
-                prev.biliModel != settings.biliModel ||
-                prev.biliDirection != settings.biliDirection
+                prev.liveModel != settings.liveModel ||
+                prev.liveDirection != settings.liveDirection
 
             if (affectsPipeline && LiveTranslateService.isPipelineRunning()) {
                 // Forward a restart intent to the service. The service is
@@ -144,35 +141,8 @@ class SettingsActivity : AppCompatActivity() {
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
         showOriginalCheck.isChecked = settings.showOriginal
         promptEdit.setText(settings.systemPrompt)
-        biliModelEdit.setText(settings.biliModel)
-
-        applyModeVisibility()
-    }
-
-    /**
-     * In BILI modes the direction button controls
-     * `translationConfig.targetLanguageCode`, so the normal target-language
-     * picker, echo checkbox, and custom prompt are irrelevant. The biliModel
-     * override field is the only BILI-specific setting here.
-     */
-    private fun applyModeVisibility() {
-        val bili = settings.isBilingual
-        langSpinner.isEnabled = !bili
-        echoCheck.isEnabled = !bili
-        promptEdit.isEnabled = !bili
-        promptLabel.alpha = if (bili) 0.4f else 1f
-        promptLabel.text = if (bili) {
-            "${getString(R.string.system_prompt)} (disabled in bilingual mode — built-in prompt)"
-        } else {
-            getString(R.string.system_prompt)
-        }
-        biliModelLabel.alpha = if (bili) 1f else 0.4f
-        biliModelEdit.isEnabled = bili
-        biliModelLabel.text = if (bili) {
-            "Bilingual Model"
-        } else {
-            "Bilingual Model (used only in 中英 / 中日 modes)"
-        }
+        modelEdit.setText(settings.liveModel)
+        modelLabel.text = "Live Model"
     }
 
     private fun applyFromUi() {
@@ -189,8 +159,8 @@ class SettingsActivity : AppCompatActivity() {
         settings.bgOpacity = opacitySlider.progress / 100f
         settings.showOriginal = showOriginalCheck.isChecked
         settings.systemPrompt = promptEdit.text.toString().trim()
-        settings.biliModel = biliModelEdit.text.toString().trim()
-            .ifBlank { AppSettings.Mode.BILINGUAL_DEFAULT_MODEL }
+        settings.liveModel = modelEdit.text.toString().trim()
+            .ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
     }
 
     override fun onSupportNavigateUp(): Boolean {
