@@ -25,9 +25,8 @@ import java.util.concurrent.TimeUnit
  * Two pipeline presets are supported via [configure]:
  *  - [AppSettings.Mode.LIVE] — `gemini-3.5-live-translate-preview` with a
  *    fixed `translationConfig.targetLanguageCode` (single-direction).
- *  - [AppSettings.Mode.BILI_ZH_EN] / [BILI_ZH_JP] — a general-purpose Live
- *    model driven by a built-in bidirectional system prompt; no
- *    `translationConfig` is sent.
+ *  - [AppSettings.Mode.BILI_ZH_EN] / [BILI_ZH_JP] — the same Live translate
+ *    setup with a user-toggleable `translationConfig.targetLanguageCode`.
  */
 class GeminiClient(
     private val listener: Listener,
@@ -42,13 +41,10 @@ class GeminiClient(
         fun onDisconnected(reason: String)
     }
 
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .pingInterval(15, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.SECONDS)   // streaming
-        .build()
-
     @Volatile private var ws: WebSocket? = null
     @Volatile private var running = false
+    @Volatile private var setupComplete = false
+    @Volatile private var intentionalStop = false
 
     private var apiKey: String = ""
     private var apiBase: String = DEFAULT_API_BASE
@@ -86,18 +82,27 @@ class GeminiClient(
     fun start() {
         if (running) return
         running = true
+        setupComplete = false
+        intentionalStop = false
 
-        val request = Request.Builder().url(buildWsUrl()).build()
+        val request = Request.Builder()
+            .url(buildWsUrl())
+            .header("x-goog-api-key", apiKey)
+            .build()
         ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 listener.onStatus("Gemini socket opened")
                 if (!sendSetup(webSocket)) {
                     running = false
+                    setupComplete = false
+                    ws = null
+                    intentionalStop = true
+                    listener.onStatus("Gemini setup send failed")
+                    listener.onDisconnected("Setup send failed")
                     webSocket.close(1000, "setup failed")
                     return
                 }
-                listener.onStatus("Gemini session ready")
-                listener.onConnected()
+                listener.onStatus("Gemini setup sent")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -112,23 +117,31 @@ class GeminiClient(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "ws failure", t)
                 running = false
+                setupComplete = false
                 ws = null
+                if (intentionalStop) return
                 listener.onStatus("Gemini error: ${t.message ?: "unknown"}")
                 listener.onDisconnected("Error: ${t.message ?: "unknown"}")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                val wasIntentional = intentionalStop
                 running = false
+                setupComplete = false
                 ws = null
-                listener.onDisconnected("Closed: $reason")
+                if (!wasIntentional) {
+                    listener.onDisconnected("Closed: $reason")
+                }
             }
         })
     }
 
     /** Stop the current session. */
     fun stop() {
-        if (!running) return
+        if (!running && ws == null) return
+        intentionalStop = true
         running = false
+        setupComplete = false
         ws?.close(1000, "client stop")
         ws = null
     }
@@ -138,6 +151,7 @@ class GeminiClient(
         if (pcm16.isEmpty()) return
         val socket = ws ?: return
         if (!running) return
+        if (!setupComplete) return
         val b64 = Base64.encodeToString(pcm16, Base64.NO_WRAP)
         val msg = JSONObject().apply {
             put("realtimeInput", JSONObject().apply {
@@ -147,7 +161,14 @@ class GeminiClient(
                 })
             })
         }.toString()
-        socket.send(msg)
+        if (!socket.send(msg)) {
+            Log.w(TAG, "sendAudio failed: websocket queue rejected audio chunk")
+            running = false
+            setupComplete = false
+            ws = null
+            listener.onStatus("Gemini audio send failed")
+            listener.onDisconnected("Audio send failed")
+        }
     }
 
     // ---------- internals ----------
@@ -159,7 +180,9 @@ class GeminiClient(
             base.startsWith("http://")  -> "ws://"  + base.removePrefix("http://")
             else -> base
         }
-        return "$base$GEMINI_WS_PATH?key=$apiKey"
+        // API key is sent via the `x-goog-api-key` header in [start] to
+        // avoid leaking it in proxy / server access logs.
+        return "$base$GEMINI_WS_PATH"
     }
 
     private fun sendSetup(socket: WebSocket): Boolean {
@@ -273,12 +296,21 @@ class GeminiClient(
             val msg = err.optString("message", "Unknown")
             Log.w(TAG, "server error: $msg  full=$raw")
             listener.onStatus("Gemini error: $msg")
+            running = false
+            ws?.close(1000, "server error")
+            ws = null
+            listener.onDisconnected("Server error: $msg")
             return
         }
 
         // setupComplete — bare ack
         if (root.has("setupComplete")) {
             Log.i(TAG, "setupComplete received — pipeline ready")
+            if (running && !setupComplete) {
+                setupComplete = true
+                listener.onStatus("Gemini session ready")
+                listener.onConnected()
+            }
             return
         }
 
@@ -322,6 +354,10 @@ class GeminiClient(
 
     companion object {
         private const val TAG = "GeminiClient"
+        private val client: OkHttpClient = OkHttpClient.Builder()
+            .pingInterval(15, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)   // streaming
+            .build()
         const val DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
         private const val GEMINI_WS_PATH =
             "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"

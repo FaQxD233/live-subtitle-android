@@ -68,7 +68,7 @@
                     android:background="@drawable/edit_text_bg"
                     android:minWidth="0dp"
                     android:paddingHorizontal="14dp"
-                    android:text="Show"
+                    android:text="@string/show"
                     android:textColor="@color/text_primary_light"
                     android:textSize="12sp" />
             </LinearLayout>

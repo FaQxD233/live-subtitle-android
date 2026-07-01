@@ -12,11 +12,24 @@
     <!-- Main -->
     <string name="start">Start</string>
     <string name="stop">Stop</string>
+    <string name="pause">Pause</string>
+    <string name="clear">Clear</string>
+    <string name="show">Show</string>
+    <string name="hide">Hide</string>
     <string name="open_settings">Settings</string>
     <string name="status_idle">Idle</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
     <string name="status_stopped">Stopped</string>
+    <string name="floating_overlay_idle_hint">Floating caption overlay will appear when running.</string>
+    <string name="floating_overlay_hint">Floating caption overlay will appear on top of other apps.</string>
+
+    <!-- Overlay -->
+    <string name="overlay_close">Close</string>
+    <string name="overlay_resize_top_left">Resize top-left</string>
+    <string name="overlay_resize_top_right">Resize top-right</string>
+    <string name="overlay_resize_bottom_left">Resize bottom-left</string>
+    <string name="overlay_resize_bottom_right">Resize bottom-right</string>
 
     <!-- Settings -->
     <string name="section_connection">CONNECTION</string>

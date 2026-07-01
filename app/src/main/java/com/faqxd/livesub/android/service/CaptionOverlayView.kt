@@ -36,7 +36,7 @@ import com.faqxd.livesub.android.data.Languages
  */
 class CaptionOverlayView(
     private val context: Context,
-    private val settings: AppSettings,
+    private var settings: AppSettings,
     private val callbacks: Callbacks,
 ) {
 
@@ -167,8 +167,7 @@ class CaptionOverlayView(
             outDraft = t
         } else {
             if (outDraft.isNotEmpty()) {
-                outCommitted = (outCommitted + "\n" + outDraft).trimStart('\n')
-                if (outCommitted.length > 1500) outCommitted = outCommitted.takeLast(1500)
+                outCommitted = appendLineLimited(outCommitted, outDraft, MAX_OUTPUT_LINES)
             }
             outDraft = t
         }
@@ -181,8 +180,7 @@ class CaptionOverlayView(
             inDraft = t
         } else {
             if (inDraft.isNotEmpty()) {
-                inCommitted = (inCommitted + "\n" + inDraft).trimStart('\n')
-                if (inCommitted.length > 800) inCommitted = inCommitted.takeLast(800)
+                inCommitted = appendLineLimited(inCommitted, inDraft, MAX_INPUT_LINES)
             }
             inDraft = t
         }
@@ -190,12 +188,12 @@ class CaptionOverlayView(
     }
 
     fun setStatus(status: String?) {
-        statusText = status ?: ""
+        statusText = (status ?: "").take(MAX_STATUS_CHARS)
         val s = statusText.lowercase()
         statusKind = when {
             listOf("connected", "ready", "live").any { it in s } -> StatusKind.CONNECTED
             listOf("connect", "starting", "loading", "init").any { it in s } -> StatusKind.CONNECTING
-            listOf("error", "fail", "disconnected", "stop").any { it in s } -> StatusKind.ERROR
+            listOf("error", "fail", "disconnected").any { it in s } -> StatusKind.ERROR
             else -> StatusKind.IDLE
         }
         refreshStatus()
@@ -212,7 +210,7 @@ class CaptionOverlayView(
 
     fun setRunningState(running: Boolean) {
         isRunning = running
-        toggleBtn.text = if (running) "Pause" else "Start"
+        toggleBtn.text = context.getString(if (running) R.string.pause else R.string.start)
     }
 
     /** Re-apply fontSize / opacity / showOriginal without re-inflating. */
@@ -252,6 +250,15 @@ class CaptionOverlayView(
         updateDirectionUi(s)
     }
 
+    /**
+     * Replace the internal settings snapshot. Call before [applyStyle] so
+     * that font size / opacity / showOriginal pick up the latest values
+     * without re-creating the overlay.
+     */
+    fun updateSettings(s: AppSettings) {
+        settings = s
+    }
+
     private fun updateDirectionUi(s: AppSettings) {
         langBadge.text = when (s.modeEnum) {
             AppSettings.Mode.LIVE -> "→ ${Languages.nameFor(s.targetLanguage)}"
@@ -264,10 +271,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        var text = outCommitted
-        if (outDraft.isNotEmpty()) {
-            text = (text + "\n" + outDraft).trim('\n')
-        }
+        var text = combineLineLimited(outCommitted, outDraft, MAX_OUTPUT_LINES)
         if (text.isEmpty()) text = "—"
         if (outputView.text.toString() != text) {
             outputView.text = text
@@ -277,14 +281,21 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        var text = inCommitted
-        if (inDraft.isNotEmpty()) {
-            text = (text + "\n" + inDraft).trim('\n')
-        }
+        val text = combineLineLimited(inCommitted, inDraft, MAX_INPUT_LINES)
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
         }
+    }
+
+    private fun appendLineLimited(existing: String, addition: String, maxLines: Int): String =
+        combineLineLimited(existing, addition, maxLines)
+
+    private fun combineLineLimited(first: String, second: String, maxLines: Int): String {
+        val lines = ArrayList<String>(maxLines + 2)
+        if (first.isNotBlank()) lines.addAll(first.trim('\n').lines())
+        if (second.isNotBlank()) lines.addAll(second.trim('\n').lines())
+        return lines.takeLast(maxLines).joinToString("\n")
     }
 
     private fun refreshStatus() {
@@ -447,5 +458,11 @@ class CaptionOverlayView(
                 else -> false
             }
         }
+    }
+
+    companion object {
+        private const val MAX_STATUS_CHARS = 80
+        private const val MAX_OUTPUT_LINES = 5
+        private const val MAX_INPUT_LINES = 5
     }
 }

@@ -88,7 +88,7 @@
                 android:layout_height="28dp"
                 android:layout_marginStart="6dp"
                 android:background="@drawable/overlay_btn_secondary"
-                android:contentDescription="Close"
+                android:contentDescription="@string/overlay_close"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
                 android:tint="#FFFFFF" />
         </LinearLayout>
@@ -170,7 +170,7 @@
                 android:background="@drawable/overlay_btn_secondary"
                 android:minWidth="64dp"
                 android:paddingHorizontal="12dp"
-                android:text="Clear"
+                android:text="@string/clear"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
 
@@ -198,7 +198,7 @@
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_gravity="top|start"
-        android:contentDescription="Resize top-left"
+        android:contentDescription="@string/overlay_resize_top_left"
         android:padding="2dp"
         android:rotation="180"
         android:src="@drawable/resize_handle" />
@@ -208,7 +208,7 @@
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_gravity="top|end"
-        android:contentDescription="Resize top-right"
+        android:contentDescription="@string/overlay_resize_top_right"
         android:padding="2dp"
         android:rotation="90"
         android:src="@drawable/resize_handle" />
@@ -218,7 +218,7 @@
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_gravity="bottom|start"
-        android:contentDescription="Resize bottom-left"
+        android:contentDescription="@string/overlay_resize_bottom_left"
         android:padding="2dp"
         android:rotation="-90"
         android:src="@drawable/resize_handle" />
@@ -228,7 +228,7 @@
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_gravity="bottom|end"
-        android:contentDescription="Resize bottom-right"
+        android:contentDescription="@string/overlay_resize_bottom_right"
         android:padding="2dp"
         android:src="@drawable/resize_handle" />
 </FrameLayout>

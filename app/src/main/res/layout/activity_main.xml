@@ -220,7 +220,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:text="Floating caption overlay will appear when running."
+        android:text="@string/floating_overlay_idle_hint"
         android:textColor="@color/text_secondary_light"
         android:textSize="12sp" />
 

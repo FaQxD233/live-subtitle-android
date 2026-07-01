@@ -39,6 +39,7 @@ import java.nio.ByteOrder
  */
 class AudioCapture(
     private val onChunk: (ByteArray) -> Unit,
+    private val onError: (String) -> Unit = {},
 ) {
     private val downsampler = PCM16Downsampler(targetRate = GEMINI_INPUT_RATE)
     private val chunker = PCM16Chunker(chunkSize = CHUNK_SIZE, onChunk = onChunk)
@@ -128,11 +129,12 @@ class AudioCapture(
 
     fun stop() {
         running = false
+        try { record?.stop() } catch (_: Exception) {}
         captureThread?.join(500)
         captureThread = null
-        try { record?.stop() } catch (_: Exception) {}
-        record?.release()
+        try { record?.release() } catch (_: Exception) {}
         record = null
+        downsampler.reset()
         chunker.reset()
     }
 
@@ -179,9 +181,12 @@ class AudioCapture(
         // Capture at native rate (e.g. 48 kHz), then downsample to 16 kHz
         // before forwarding. Same pipeline as the system-audio branch.
         val buf = ByteArray(bufSize)
+        val floats = FloatArray(bufSize / 2)
+        val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         var silentChunks = 0
         var totalRead = 0L
         var errorStreak = 0
+        var failure: String? = null
         while (running) {
             val read = ar.read(buf, 0, buf.size)
             if (read <= 0) {
@@ -190,16 +195,19 @@ class AudioCapture(
                     AudioRecord.ERROR_INVALID_OPERATION,
                     AudioRecord.ERROR_BAD_VALUE -> {
                         Log.w(TAG, "micLoop: fatal read error $read, stopping")
+                        failure = "Microphone read failed ($read)"
                         break
                     }
                     AudioRecord.ERROR_DEAD_OBJECT -> {
                         Log.w(TAG, "micLoop: ERROR_DEAD_OBJECT — caller must restart capture")
+                        failure = "Microphone recorder was disconnected"
                         break
                     }
                     else -> {
                         // ERROR or ERROR_TIMEOUT: tolerate a few times then bail
                         if (errorStreak > 50) {
                             Log.w(TAG, "micLoop: too many transient read errors ($errorStreak), stopping")
+                            failure = "Microphone read timed out repeatedly"
                             break
                         }
                         Thread.sleep(5)
@@ -227,15 +235,11 @@ class AudioCapture(
 
                 // PCM16 LE bytes → Float32 → downsampler → 16 kHz mono PCM16 LE
                 val frames = read / 2  // mono: 1 sample = 2 bytes
-                val floats = FloatArray(frames)
-                val sb = ByteBuffer
-                    .wrap(buf, 0, frames * 2)
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .asShortBuffer()
                 for (i in 0 until frames) {
-                    floats[i] = sb.get(i) / 32768f
+                    floats[i] = shortBuffer.get(i) / 32768f
                 }
-                val pcm16 = downsampler.convert(floats, sampleRate, channels = 1)
+                val input = if (frames == floats.size) floats else floats.copyOf(frames)
+                val pcm16 = downsampler.convert(input, sampleRate, channels = 1)
                 chunker.append(pcm16)
 
                 // Periodic heartbeat so the user can see in logcat that
@@ -245,35 +249,85 @@ class AudioCapture(
                 }
             }
         }
+        failure?.let { reason ->
+            if (running) {
+                running = false
+                onError(reason)
+            }
+        }
         Log.i(TAG, "micLoop exited: totalRead=$totalRead")
     }
 
     private fun systemLoop(ar: AudioRecord, bufSize: Int) {
         val buf = ByteArray(bufSize)
+        val floats = FloatArray(bufSize / 2)
+        val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        var silentChunks = 0
+        var totalRead = 0L
+        var errorStreak = 0
+        var failure: String? = null
         while (running) {
             val read = ar.read(buf, 0, buf.size)
             if (read <= 0) {
-                if (read == AudioRecord.ERROR_INVALID_OPERATION ||
-                    read == AudioRecord.ERROR_BAD_VALUE
-                ) {
-                    Log.w(TAG, "system AudioRecord.read returned $read, stopping")
-                    break
+                errorStreak++
+                when (read) {
+                    AudioRecord.ERROR_INVALID_OPERATION,
+                    AudioRecord.ERROR_BAD_VALUE -> {
+                        Log.w(TAG, "systemLoop: fatal read error $read, stopping")
+                        failure = "System audio read failed ($read)"
+                        break
+                    }
+                    AudioRecord.ERROR_DEAD_OBJECT -> {
+                        Log.w(TAG, "systemLoop: ERROR_DEAD_OBJECT — caller must restart capture")
+                        failure = "System audio recorder was disconnected"
+                        break
+                    }
+                    else -> {
+                        if (errorStreak > 50) {
+                            Log.w(TAG, "systemLoop: too many transient read errors ($errorStreak), stopping")
+                            failure = "System audio read timed out repeatedly"
+                            break
+                        }
+                        Thread.sleep(5)
+                        continue
+                    }
                 }
-                continue
+            }
+            errorStreak = 0
+            totalRead += read
+            val rms = computePcm16Rms(buf, 0, read)
+            if (rms < SILENCE_RMS_THRESHOLD) {
+                silentChunks++
+                if (silentChunks == LOG_SILENCE_AFTER) {
+                    Log.w(TAG, "systemLoop: $silentChunks silent chunks in a row (rms=$rms). App may block playback capture or be silent.")
+                }
+            } else {
+                if (silentChunks >= LOG_SILENCE_AFTER) {
+                    Log.i(TAG, "systemLoop: audio resumed after $silentChunks silent chunks (rms=$rms)")
+                }
+                silentChunks = 0
             }
             // PCM16 LE bytes → Float32 array
             val frames = read / 2 / channels
-            val floats = FloatArray(frames * channels)
-            val sb = ByteBuffer
-                .wrap(buf, 0, frames * channels * 2)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asShortBuffer()
-            for (i in 0 until frames * channels) {
-                floats[i] = sb.get(i) / 32768f
+            val sampleCount = frames * channels
+            for (i in 0 until sampleCount) {
+                floats[i] = shortBuffer.get(i) / 32768f
             }
-            val pcm16 = downsampler.convert(floats, sampleRate, channels)
+            val input = if (sampleCount == floats.size) floats else floats.copyOf(sampleCount)
+            val pcm16 = downsampler.convert(input, sampleRate, channels)
             chunker.append(pcm16)
+
+            if (totalRead % (sampleRate * channels * 4) < bufSize) {
+                Log.d(TAG, "systemLoop heartbeat: totalRead=$totalRead rms=$rms")
+            }
         }
+        failure?.let { reason ->
+            if (running) {
+                running = false
+                onError(reason)
+            }
+        }
+        Log.i(TAG, "systemLoop exited: totalRead=$totalRead")
     }
 
     private fun computePcm16Rms(buf: ByteArray, offset: Int, len: Int): Double {

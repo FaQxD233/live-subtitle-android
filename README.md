@@ -4,7 +4,7 @@
 
 本仓库是 [`livebuddy-windows/`](../livebuddy-windows/) 的 Android 移植版，保留了 Windows 版的功能与 UI 设计语言：
 
-- 浮动 HUD 字幕条（透明置顶、可拖动、状态指示）
+- 浮动 HUD 字幕条（透明置顶、可拖动、可缩放、状态指示）
 - 麦克风或系统音频（loopback via MediaProjection）双音源
 - Gemini Live WebSocket 实时翻译
 - 可选 TTS 回放（24 kHz Float32）
@@ -40,15 +40,14 @@
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE` | 后台持续采集麦克风 |
 | `FOREGROUND_SERVICE_MEDIA_PROJECTION` | 系统音频 loopback（仅当选择 "system" 音源时） |
 | `POST_NOTIFICATIONS`         | 前台服务通知（Android 13+）             |
-| `INTERNET` / `ACCESS_NETWORK_STATE` | 连接 Gemini Live API             |
-| `WAKE_LOCK`                  | 屏幕熄灭时仍持续翻译                    |
+| `INTERNET`                   | 连接 Gemini Live API                   |
 
 ## 编译与运行
 
 ### 通过 Android Studio（推荐）
 
 1. Android Studio → **Open** → 选择 `livebuddy-android/` 目录
-2. 等待 Gradle sync 完成（首次会自动生成 gradle-wrapper.jar）
+2. 等待 Gradle sync 完成
 3. 连接 Android 设备（开启 USB 调试）→ 点击 **Run ▶**
 
 ### 通过命令行
@@ -56,14 +55,11 @@
 ```bash
 cd livebuddy-android
 
-# 生成 wrapper（如果尚未生成）
-gradle wrapper
-
-# 编译 Debug APK
-./gradlew assembleDebug
+# 编译 Debug APK（本仓库当前未提交 Gradle wrapper，需要本机已安装 Gradle）
+gradle assembleDebug
 
 # 安装到已连接设备
-./gradlew installDebug
+gradle installDebug
 ```
 
 生成的 APK 在 `app/build/outputs/apk/debug/app-debug.apk`。
@@ -80,7 +76,7 @@ gradle wrapper
    - Save
 3. 回到主页，点 **Start**
 4. 首次启动会依次请求：
-   - 显示悬浮窗权限（跳转到系统设置 → "显示在其他应用上层"）
+   - 显示悬浮窗权限（跳转到系统设置 → "显示在其他应用上层"，授权后返回 App 会继续启动流程）
    - 麦克风权限
    - 通知权限（Android 13+）
    - 屏幕录制权限（仅当音源选 "system" 时；**只采集音频**，不录屏）
@@ -90,6 +86,7 @@ gradle wrapper
 ## 浮动字幕条功能
 
 - **拖动**：按住字幕条任意位置拖到任意位置
+- **缩放**：拖动四角缩放手柄调整浮窗大小
 - **状态指示**：左上角圆点颜色对应状态（灰色=空闲，黄色=连接中，绿色=已连接，红色=错误）
 - **目标语言徽章**：右上角显示当前翻译目标语言
 - **主字幕区**：翻译结果，最多保留 5 行
@@ -104,7 +101,7 @@ gradle wrapper
 /data/data/com.faqxd.livesub.android/shared_prefs/livebuddy_settings.xml
 ```
 
-**注意**：API key 以明文存储，root 设备上的其他进程理论上可读取。
+**注意**：API key 以明文存储。App 已禁用 Android 系统备份，避免配置随 Auto Backup 进入云端备份；但 root 设备上的其他进程理论上仍可读取。
 
 ## 与 Windows 版的差异
 
@@ -113,7 +110,7 @@ gradle wrapper
 | GUI 框架            | PySide6 (Qt)                         | Android View 系统                              |
 | 浮动窗口            | `Qt.WindowStaysOnTopHint`            | `WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY` |
 | 系统音频捕获        | WASAPI loopback（PyAudioWPatch）     | `MediaProjection` + `AudioPlaybackCaptureConfiguration` |
-| 缩放                | 四角 QSizeGrip                       | 暂未实现（Android 浮窗通常只支持拖动）           |
+| 缩放                | 四角 QSizeGrip                       | 四角拖拽缩放手柄                                  |
 | 托盘图标            | QSystemTrayIcon                      | 前台服务通知                                    |
 | 配置存储            | `%APPDATA%\settings.json`            | `SharedPreferences`                            |
 | 后台运行            | 进程                                  | Foreground Service（必须显示常驻通知）           |
@@ -173,7 +170,7 @@ livebuddy-android/
 - **MediaProjection 需要屏幕录制权限**：选择 "system" 音源时，系统会弹出屏幕录制权限请求。App **只采集音频，不录制屏幕**，但 Android 系统的提示文案无法修改。
 - **前台服务通知**：Android 8+ 强制要求前台服务显示常驻通知，无法隐藏。
 - **悬浮窗与状态栏**：浮窗位置基于屏幕左上角，不受状态栏遮挡影响（使用 `FLAG_LAYOUT_NO_LIMITS`）。
-- **无缩放手柄**：与 Windows 版的四个 QSizeGrip 不同，Android 浮窗只支持拖动；如需调整字幕字号，请到 Settings 中修改 Font size。
+- **浮窗位置与大小暂不持久化**：重启服务后会回到默认位置与尺寸；字幕字号可在 Settings 中修改。
 - **国内网络**：如直连 Google API 不通，可在 Settings 的 **API Base URL** 填入自建代理或区域镜像地址。
 
 ## 故障排查

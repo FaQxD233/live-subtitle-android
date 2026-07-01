@@ -103,9 +103,8 @@ data class AppSettings(
                 Mode.BILINGUAL_DEFAULT_MODEL,
             ) ?: Mode.BILINGUAL_DEFAULT_MODEL
             // Migrate older defaults that may have been persisted on a
-            // previous install. `gemini-3.1-flash-live-preview` is paid-tier
-            // only; silently swap to the free-tier `gemini-3-flash-live` so
-            // existing users don't get a 404 on the next BILI session.
+            // previous install. These names are not available on the current
+            // v1beta Live API path, so silently swap to the current default.
             val biliModel = migrateBiliModel(rawBiliModel)
             return AppSettings(
                 apiKey = prefs.getString("api_key", "") ?: "",

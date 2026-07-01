@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
 
     private var pendingStart = false
     private var serviceRunning = false
+    private var waitingForOverlayPermission = false
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -68,6 +69,12 @@ class MainActivity : AppCompatActivity() {
         continueStartFlow()
     }
 
+    private val overlayPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        handleOverlayPermissionReturn()
+    }
+
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -75,8 +82,9 @@ class MainActivity : AppCompatActivity() {
             startServiceWithProjection(result.resultCode, result.data!!)
         } else {
             showHint(getString(R.string.perm_system_audio_rationale))
-            // Fall back to microphone capture so the user still gets *something*.
-            startServiceWithProjection(0, null)
+            pendingStart = false
+            serviceRunning = false
+            toggleBtn.text = getString(R.string.start)
         }
     }
 
@@ -88,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         serviceRunning = true
         pendingStart = false
         toggleBtn.text = getString(R.string.stop)
-        hintText.text = "Floating caption overlay will appear on top of other apps."
+        hintText.text = getString(R.string.floating_overlay_hint)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,7 +133,15 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Refresh settings in case the user changed something in SettingsActivity.
         settings = AppSettings.load(this)
+        // Sync the toggle button with the actual service state — the
+        // activity may have been recreated (rotation, recents) while the
+        // foreground service kept running.
+        serviceRunning = LiveTranslateService.isPipelineRunning()
+        toggleBtn.text = if (serviceRunning) getString(R.string.stop) else getString(R.string.start)
         applySettingsToUi()
+        if (waitingForOverlayPermission && pendingStart) {
+            handleOverlayPermissionReturn()
+        }
     }
 
     private fun applySettingsToUi() {
@@ -163,7 +179,7 @@ class MainActivity : AppCompatActivity() {
                 settings.mode = newMode.id
                 settings.save(this)
                 applySettingsToUi()
-                if (serviceRunning) {
+                if (LiveTranslateService.isPipelineRunning()) {
                     ContextCompat.startForegroundService(
                         this,
                         LiveTranslateService.restartIntent(this)
@@ -194,7 +210,8 @@ class MainActivity : AppCompatActivity() {
         // Permission chain: overlay → mic → notif → (projection if "system")
         if (!hasOverlayPermission()) {
             showHint(getString(R.string.perm_overlay_rationale))
-            startActivity(
+            waitingForOverlayPermission = true
+            overlayPermissionLauncher.launch(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName"),
@@ -225,7 +242,7 @@ class MainActivity : AppCompatActivity() {
         settings.biliDirection = if (settings.biliDirection == "b2a") "a2b" else "b2a"
         settings.save(this)
         applySettingsToUi()
-        if (serviceRunning) {
+        if (LiveTranslateService.isPipelineRunning()) {
             ContextCompat.startForegroundService(
                 this,
                 LiveTranslateService.restartIntent(this)
@@ -254,17 +271,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        // Returning from the SYSTEM_ALERT_WINDOW settings screen
-        if (requestCode == REQ_OVERLAY) {
-            if (hasOverlayPermission() && pendingStart) continueStartFlow()
-            else pendingStart = false
+    private fun handleOverlayPermissionReturn() {
+        if (!waitingForOverlayPermission) return
+        waitingForOverlayPermission = false
+        if (!pendingStart) return
+        if (hasOverlayPermission()) {
+            continueStartFlow()
+        } else {
+            pendingStart = false
+            showHint(getString(R.string.perm_overlay_rationale))
         }
     }
 
     private fun hasOverlayPermission(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
+        Settings.canDrawOverlays(this)
 
     private fun hasMicPermission(): Boolean =
         ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
@@ -280,7 +300,4 @@ class MainActivity : AppCompatActivity() {
         hintText.text = text
     }
 
-    companion object {
-        private const val REQ_OVERLAY = 1001
-    }
 }

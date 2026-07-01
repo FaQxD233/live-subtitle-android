@@ -76,10 +76,10 @@ class SettingsActivity : AppCompatActivity() {
                 InputType.TYPE_TEXT_VARIATION_PASSWORD
             if (showing) {
                 apiKeyEdit.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                showKeyBtn.text = "Show"
+                showKeyBtn.text = getString(R.string.show)
             } else {
                 apiKeyEdit.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                showKeyBtn.text = "Hide"
+                showKeyBtn.text = getString(R.string.hide)
             }
         }
 
@@ -101,10 +101,13 @@ class SettingsActivity : AppCompatActivity() {
                 prev.biliModel != settings.biliModel ||
                 prev.biliDirection != settings.biliDirection
 
-            if (affectsPipeline) {
+            if (affectsPipeline && LiveTranslateService.isPipelineRunning()) {
                 // Forward a restart intent to the service. The service is
-                // no-op if the pipeline isn't currently running, so it's
-                // always safe to send.
+                // already in the foreground while the pipeline is active.
+                // Do not start it only to deliver a no-op restart command:
+                // Android 8+ requires startForegroundService callers to
+                // promote the service quickly, which ACTION_RESTART does
+                // not do when no pipeline is running.
                 ContextCompat.startForegroundService(
                     this,
                     LiveTranslateService.restartIntent(this)
@@ -147,11 +150,10 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * In BILI modes the bidirectional system prompt is built-in and the
-     * model ignores `translationConfig`, so the target-language picker,
-     * echo checkbox, and custom prompt are irrelevant — disable them so
-     * the user doesn't get confused. The biliModel override field is the
-     * only BILI-specific knob.
+     * In BILI modes the direction button controls
+     * `translationConfig.targetLanguageCode`, so the normal target-language
+     * picker, echo checkbox, and custom prompt are irrelevant. The biliModel
+     * override field is the only BILI-specific setting here.
      */
     private fun applyModeVisibility() {
         val bili = settings.isBilingual

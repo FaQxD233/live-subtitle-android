@@ -22,7 +22,11 @@ class AudioPlayer(
     @Volatile var gain: Float = 0.8f,
 ) {
     private val lock = Any()
-    private var buffer = FloatArray(0)
+    // Chunk-based queue — avoids the O(n²) copying that FloatArray
+    // concatenation caused on every enqueuePcm16 call.
+    private val chunkQueue = ArrayDeque<FloatArray>()
+    private var headOffset = 0   // read position within chunkQueue.first()
+    private var queuedSamples = 0
     private var track: AudioTrack? = null
     private var thread: Thread? = null
 
@@ -53,7 +57,6 @@ class AudioPlayer(
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         t.setVolume(gain.coerceIn(0f, 1f))
-        t.play()
         track = t
         running = true
         thread = Thread({ drainLoop(t, minBuf) }, "AudioPlayer").apply {
@@ -74,12 +77,17 @@ class AudioPlayer(
             .asShortBuffer()
         for (i in floats.indices) floats[i] = sb.get(i) / 32768f
         synchronized(lock) {
-            buffer = if (buffer.isEmpty()) floats else buffer + floats
-            // Cap buffer at 5 seconds to avoid runaway memory if AudioTrack stalls.
+            chunkQueue.addLast(floats)
+            queuedSamples += floats.size
+            // Cap buffer at 5 seconds to avoid runaway memory if AudioTrack
+            // stalls. Drop oldest chunks first.
             val maxSamples = sampleRate * 5
-            if (buffer.size > maxSamples) {
-                buffer = buffer.copyOfRange(buffer.size - maxSamples, buffer.size)
+            while (queuedSamples > maxSamples && chunkQueue.isNotEmpty()) {
+                val removed = chunkQueue.removeFirst()
+                queuedSamples -= (removed.size - headOffset)
+                headOffset = 0
             }
+            lock.notifyAll()
         }
     }
 
@@ -90,12 +98,19 @@ class AudioPlayer(
 
     fun stop() {
         running = false
+        synchronized(lock) {
+            lock.notifyAll()
+        }
         thread?.join(500)
         thread = null
         try { track?.stop() } catch (_: Exception) {}
-        track?.release()
+        try { track?.release() } catch (_: Exception) {}
         track = null
-        synchronized(lock) { buffer = FloatArray(0) }
+        synchronized(lock) {
+            chunkQueue.clear()
+            headOffset = 0
+            queuedSamples = 0
+        }
     }
 
     // ---------- internals ----------
@@ -103,28 +118,47 @@ class AudioPlayer(
     private fun drainLoop(t: AudioTrack, bufSizeFrames: Int) {
         val out = FloatArray(bufSizeFrames)
         while (running) {
-            val take: Int
+            var written = 0
+            var pauseForIdle = false
             synchronized(lock) {
-                take = minOf(bufSizeFrames, buffer.size)
-                if (take > 0) {
-                    System.arraycopy(buffer, 0, out, 0, take)
-                    buffer = buffer.copyOfRange(take, buffer.size)
+                if (chunkQueue.isEmpty()) {
+                    lock.wait(IDLE_PAUSE_DELAY_MS)
+                    if (!running) return
+                    if (chunkQueue.isEmpty()) {
+                        pauseForIdle = true
+                    }
+                }
+                while (written < bufSizeFrames && chunkQueue.isNotEmpty()) {
+                    val chunk = chunkQueue.peekFirst()
+                    val available = chunk.size - headOffset
+                    val toTake = minOf(available, bufSizeFrames - written)
+                    System.arraycopy(chunk, headOffset, out, written, toTake)
+                    written += toTake
+                    headOffset += toTake
+                    queuedSamples -= toTake
+                    if (headOffset >= chunk.size) {
+                        chunkQueue.removeFirst()
+                        headOffset = 0
+                    }
                 }
             }
-            if (take == 0) {
-                // Buffer underrun: write silence to keep AudioTrack fed.
-                java.util.Arrays.fill(out, 0f)
-                t.write(out, 0, bufSizeFrames, AudioTrack.WRITE_BLOCKING)
-            } else {
-                if (take < bufSizeFrames) {
-                    java.util.Arrays.fill(out, take, bufSizeFrames, 0f)
-                }
-                t.write(out, 0, bufSizeFrames, AudioTrack.WRITE_BLOCKING)
+            if (pauseForIdle) {
+                try {
+                    if (t.playState == AudioTrack.PLAYSTATE_PLAYING) t.pause()
+                } catch (_: Exception) {}
+                continue
+            }
+            if (written > 0) {
+                try {
+                    if (t.playState != AudioTrack.PLAYSTATE_PLAYING) t.play()
+                } catch (_: Exception) {}
+                t.write(out, 0, written, AudioTrack.WRITE_BLOCKING)
             }
         }
     }
 
     companion object {
         const val GEMINI_OUTPUT_RATE = 24000
+        private const val IDLE_PAUSE_DELAY_MS = 200L
     }
 }

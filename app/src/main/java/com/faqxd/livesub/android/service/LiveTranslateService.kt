@@ -15,7 +15,9 @@ import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.faqxd.livesub.android.MainActivity
@@ -58,11 +60,36 @@ class LiveTranslateService : Service() {
     private var mediaProjection: MediaProjection? = null
     @Volatile private var running = false
 
+    // Auto-reconnect state for unexpected WebSocket disconnects.
+    private var reconnectJob: Job? = null
+    private var reconnectAttempts = 0
+
     // Cached MediaProjection grant from the most recent ACTION_START.
     // Reused by ACTION_RESTART so the user can change API key / language /
     // echo / prompt without re-granting system-audio capture.
     private var lastResultCode: Int = 0
     private var lastResultData: Intent? = null
+
+    // Incremented whenever a new WebSocket session starts or the current
+    // pipeline is invalidated. Late callbacks from old sessions are ignored.
+    @Volatile private var currentSessionId: Int = 0
+    private var pendingCaptureResultCode: Int = 0
+    private var pendingCaptureResultData: Intent? = null
+
+    /**
+     * Notified when the system revokes the active [MediaProjection]
+     * (e.g. screen-off policy, user dismissal). We drop the cached
+     * reference so the next start re-grants instead of reusing a dead
+     * instance whose token is invalid (esp. on Android 14+).
+     */
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() {
+            mediaProjection = null
+            lastResultCode = 0
+            lastResultData = null
+            Log.w(TAG, "MediaProjection stopped by system; grant cleared")
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -87,15 +114,18 @@ class LiveTranslateService : Service() {
                 // Forget the projection token on explicit stop so a later
                 // restart doesn't try to use a stale grant. ACTION_RESTART
                 // preserves it (see [restartPipelineIfNeeded]).
-                lastResultCode = 0
-                lastResultData = null
+                teardownProjection()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             ACTION_TOGGLE -> togglePipeline()
             ACTION_RESTART -> restartPipelineIfNeeded()
         }
-        return START_STICKY
+        // START_NOT_STICKY: the service needs RECORD_AUDIO + (optional)
+        // MediaProjection consent that we cannot re-acquire after the
+        // system kills and recreates us, so don't request an auto-restart
+        // with a null intent we couldn't safely handle anyway.
+        return START_NOT_STICKY
     }
 
     /**
@@ -135,7 +165,7 @@ class LiveTranslateService : Service() {
             try {
                 startPipeline(lastResultCode, if (useSystem) lastResultData else null)
                 if (latest.audioSource == "system" && !useSystem) {
-                    overlay?.setStatus("System audio needs re-grant; using mic")
+                    overlay?.setStatus("System audio permission required")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "restart after direction toggle failed", e)
@@ -147,6 +177,7 @@ class LiveTranslateService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopPipeline()
+        teardownProjection()
         scope.coroutineContext[Job]?.cancel()
     }
 
@@ -160,11 +191,24 @@ class LiveTranslateService : Service() {
             return
         }
 
-        // Overlay
-        ensureOverlay(s)
+        // Overlay. If the system rejects the floating window, do not keep
+        // capturing audio invisibly in the background.
+        if (!ensureOverlay(s)) {
+            failPipeline(getString(R.string.err_no_overlay_perm))
+            return
+        }
 
-        // Player (echo). BILI modes use responseModalities=["TEXT"], so the
-        // model never returns audio and there's nothing to play back.
+        if (s.audioSource == "system" && resultData == null) {
+            val status = "System audio permission required"
+            overlay?.setRunningState(false)
+            overlay?.setStatus(status)
+            updateNotification(running = false)
+            notifyStatus(status)
+            return
+        }
+
+        // Player (echo). BILI modes intentionally keep playback disabled;
+        // captions are read from output transcription only.
         val wantEcho = s.echoTargetLanguage && !s.isBilingual
         if (wantEcho) {
             try {
@@ -177,7 +221,11 @@ class LiveTranslateService : Service() {
         }
 
         // Gemini client
-        val c = GeminiClient(listener = createClientListener()).also { client = it }
+        val sessionId = ++currentSessionId
+        pendingCaptureResultCode = resultCode
+        pendingCaptureResultData = resultData
+
+        val c = GeminiClient(listener = createClientListener(sessionId)).also { client = it }
         c.configure(
             apiKey = s.apiKey,
             targetLang = s.targetLanguage,
@@ -189,37 +237,102 @@ class LiveTranslateService : Service() {
             biliDirection = s.biliDirection,
         )
 
-        // Audio capture
-        val cap = AudioCapture(onChunk = { pcm16 -> c.sendAudio(pcm16) }).also { capture = it }
+        running = true
+        pipelineRunning = true
+        overlay?.setRunningState(true)
+        overlay?.setStatus("Connecting...")
+        updateNotification(running = true)
+
+        try {
+            c.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Gemini client start failed", e)
+            failPipeline("Gemini start error: ${e.message}")
+            return
+        }
+    }
+
+    private fun startCaptureForSession(sessionId: Int) {
+        if (!isCurrentSession(sessionId) || !running || capture != null) return
+
+        val s = settings ?: AppSettings.load(this).also { settings = it }
+        val c = client ?: return
+        val resultData = pendingCaptureResultData
+        if (s.audioSource == "system" && resultData == null) {
+            failPipeline("System audio permission required")
+            return
+        }
+
+        val cap = AudioCapture(
+            onChunk = { pcm16 ->
+                if (isCurrentSession(sessionId) && running) {
+                    c.sendAudio(pcm16)
+                }
+            },
+            onError = { reason ->
+                scope.launch {
+                    if (isCurrentSession(sessionId)) {
+                        failPipeline(
+                            status = "Capture error: $reason",
+                            teardownProjectionGrant = s.audioSource == "system",
+                        )
+                    }
+                }
+            }
+        ).also { capture = it }
+
         try {
             if (s.audioSource == "system" && resultData != null) {
-                startSystemCapture(cap, resultCode, resultData)
+                startSystemCapture(cap, pendingCaptureResultCode, resultData)
             } else {
                 cap.startMicrophone(context = this)
             }
         } catch (e: Exception) {
             Log.e(TAG, "AudioCapture start failed", e)
-            notifyStatus("Capture error: ${e.message}")
-            player?.stop(); player = null
-            return
+            failPipeline("Capture error: ${e.message}", teardownProjectionGrant = true)
         }
-
-        c.start()
-        running = true
-        overlay?.setRunningState(true)
-        overlay?.setStatus("Connecting...")
-        updateNotification(running = true)
     }
 
-    private fun stopPipeline() {
-        if (!running && client == null && capture == null) return
+    private fun failPipeline(status: String, teardownProjectionGrant: Boolean = false) {
+        currentSessionId++
         running = false
+        pipelineRunning = false
+        cancelReconnect()
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
         try { player?.stop() } catch (_: Exception) {}
         player = null
-        try { mediaProjection?.stop() } catch (_: Exception) {}
-        mediaProjection = null
+        client?.stop()
+        client = null
+        if (teardownProjectionGrant) teardownProjection()
+        overlay?.setRunningState(false)
+        overlay?.setStatus(status)
+        updateNotification(running = false)
+        notifyStatus(status)
+    }
+
+    private fun stopPipeline() {
+        currentSessionId++
+        pendingCaptureResultCode = 0
+        pendingCaptureResultData = null
+        if (!running && client == null && capture == null) {
+            pipelineRunning = false
+            cancelReconnect()
+            return
+        }
+        running = false
+        pipelineRunning = false
+        cancelReconnect()
+        try { capture?.stop() } catch (_: Exception) {}
+        capture = null
+        try { player?.stop() } catch (_: Exception) {}
+        player = null
+        // NOTE: mediaProjection is intentionally kept alive so a
+        // subsequent restart / toggle / reconnect can reuse the same
+        // grant without re-prompting the user. Once a projection is
+        // stopped its token becomes invalid (esp. Android 14+), so we
+        // only tear it down when the service is permanently stopped
+        // (see [teardownProjection]).
         client?.stop()
         client = null
         overlay?.setRunningState(false)
@@ -227,8 +340,43 @@ class LiveTranslateService : Service() {
         updateNotification(running = false)
     }
 
+    /**
+     * Permanently stop the cached [MediaProjection] and forget the grant
+     * token. Called when the service is being destroyed (ACTION_STOP /
+     * [onDestroy] / overlay close) — NOT on transient pipeline stops,
+     * so that restart / toggle / reconnect can reuse the live projection.
+     */
+    private fun teardownProjection() {
+        mediaProjection?.let {
+            try { it.unregisterCallback(projectionCallback) } catch (_: Exception) {}
+            try { it.stop() } catch (_: Exception) {}
+        }
+        mediaProjection = null
+        lastResultCode = 0
+        lastResultData = null
+    }
+
     private fun togglePipeline() {
-        if (running) stopPipeline() else startPipeline(0, null)
+        if (running) {
+            stopPipeline()
+            return
+        }
+        // Restart after a disconnect / user pause: reuse the cached
+        // MediaProjection token so system-audio mode survives the cycle
+        // instead of silently starting the wrong audio source.
+        cancelReconnect()
+        val s = AppSettings.load(this)
+        val useSystem = s.audioSource == "system" && lastResultData != null
+        startForegroundIfNeeded(useSystemAudio = useSystem)
+        try {
+            startPipeline(lastResultCode, if (useSystem) lastResultData else null)
+            if (s.audioSource == "system" && !useSystem) {
+                overlay?.setStatus("System audio permission required")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "restart after toggle failed", e)
+            overlay?.setStatus("Restart failed: ${e.message}")
+        }
     }
 
     /**
@@ -241,8 +389,8 @@ class LiveTranslateService : Service() {
      * The MediaProjection grant from the last ACTION_START is reused so the
      * user doesn't have to re-grant system-audio capture when only the API
      * key / target language / echo / prompt changed. If the user switched
-     * audioSource mic → system *without* an existing grant, we fall back to
-     * the microphone path and surface a notice in the overlay status line.
+     * audioSource mic → system *without* an existing grant, the restart is
+     * refused until the user starts from the main screen and grants capture.
      */
     private fun restartPipelineIfNeeded() {
         if (!running) {
@@ -260,7 +408,7 @@ class LiveTranslateService : Service() {
             try {
                 startPipeline(lastResultCode, if (useSystem) lastResultData else null)
                 if (s.audioSource == "system" && !useSystem) {
-                    overlay?.setStatus("System audio needs re-grant; using mic")
+                    overlay?.setStatus("System audio permission required")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "restart failed", e)
@@ -271,7 +419,7 @@ class LiveTranslateService : Service() {
 
     // ---------- overlay ----------
 
-    private fun ensureOverlay(s: AppSettings) {
+    private fun ensureOverlay(s: AppSettings): Boolean {
         if (overlay == null) {
             overlay = CaptionOverlayView(
                 context = this,
@@ -291,6 +439,7 @@ class LiveTranslateService : Service() {
                     }
                     override fun onCloseClicked() {
                         stopPipeline()
+                        teardownProjection()
                         overlay?.detach()
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
@@ -302,6 +451,10 @@ class LiveTranslateService : Service() {
             )
         }
         overlay?.init()
+        // Update the overlay's settings snapshot before applying style so
+        // font size / opacity / showOriginal pick up the latest values
+        // without re-creating the overlay.
+        overlay?.updateSettings(s)
         overlay?.applyStyle()
         // applyStyle() reads the *constructor-time* settings, which may be
         // stale if the user switched mode (LIVE → BILI) without the overlay
@@ -313,16 +466,28 @@ class LiveTranslateService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "overlay attach failed: ${e.message}")
             notifyStatus(getString(R.string.err_no_overlay_perm))
+            return false
         }
+        return true
     }
 
     // ---------- media projection ----------
 
     private fun startSystemCapture(cap: AudioCapture, resultCode: Int, data: Intent) {
-        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        @Suppress("DEPRECATION")
-        val mp = mpm.getMediaProjection(resultCode, data) ?: run {
-            throw RuntimeException("MediaProjection token rejected")
+        // Reuse a still-live MediaProjection when available so a restart
+        // / toggle / reconnect doesn't re-prompt the user. Once a
+        // projection is stopped its token becomes invalid (esp. on
+        // Android 14+), so we must never call getMediaProjection with a
+        // stale token — instead we keep the instance alive across
+        // transient stops (see [stopPipeline] / [teardownProjection]).
+        val mp = mediaProjection ?: run {
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            @Suppress("DEPRECATION")
+            val newMp = mpm.getMediaProjection(resultCode, data) ?: run {
+                throw RuntimeException("MediaProjection token rejected")
+            }
+            newMp.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
+            newMp
         }
         mediaProjection = mp
 
@@ -357,37 +522,108 @@ class LiveTranslateService : Service() {
 
     // ---------- gemini listener (forwards to overlay on main thread) ----------
 
-    private fun createClientListener() = object : GeminiClient.Listener {
+    private fun isCurrentSession(sessionId: Int): Boolean =
+        sessionId == currentSessionId
+
+    private fun createClientListener(sessionId: Int) = object : GeminiClient.Listener {
         override fun onInputTranscript(text: String) {
-            scope.launch { overlay?.setInput(text) }
+            scope.launch {
+                if (isCurrentSession(sessionId)) overlay?.setInput(text)
+            }
         }
         override fun onOutputTranscript(text: String) {
-            scope.launch { overlay?.setOutput(text) }
+            scope.launch {
+                if (isCurrentSession(sessionId)) overlay?.setOutput(text)
+            }
         }
         override fun onAudioChunk(pcm16: ByteArray) {
             // AudioTrack writes are blocking; do them on a dedicated thread
             // (OkHttp dispatcher in this case) to avoid stalling the WS reader.
-            player?.enqueuePcm16(pcm16)
+            if (isCurrentSession(sessionId)) player?.enqueuePcm16(pcm16)
         }
         override fun onStatus(status: String) {
-            scope.launch { overlay?.setStatus(status) }
+            scope.launch {
+                if (isCurrentSession(sessionId)) overlay?.setStatus(status)
+            }
         }
         override fun onConnected() {
             scope.launch {
+                if (!isCurrentSession(sessionId)) return@launch
+                reconnectAttempts = 0
                 overlay?.setStatus("Connected")
-                updateNotification(running = true)
+                startCaptureForSession(sessionId)
+                if (isCurrentSession(sessionId) && running) {
+                    updateNotification(running = true)
+                }
             }
         }
         override fun onDisconnected(reason: String) {
             scope.launch {
+                if (!isCurrentSession(sessionId)) return@launch
                 overlay?.setStatus("Disconnected: $reason".take(80))
                 if (running) {
+                    // Unexpected disconnect — stop capture but keep the
+                    // overlay visible so the user sees the status.
+                    currentSessionId++
                     running = false
+                    pipelineRunning = false
                     capture?.stop(); capture = null
                     player?.stop(); player = null
                     overlay?.setRunningState(false)
+                    tryReconnect()
                 }
                 updateNotification(running = false)
+            }
+        }
+    }
+
+    // ---------- auto-reconnect ----------
+
+    /**
+     * Cancel any pending reconnect coroutine and reset the attempt counter.
+     * Called from [stopPipeline] and [togglePipeline] to ensure a clean
+     * slate for the next user-initiated start.
+     */
+    private fun cancelReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = null
+        reconnectAttempts = 0
+    }
+
+    /**
+     * Attempt to re-establish the WebSocket session after an unexpected
+     * disconnect. Uses exponential backoff (1s, 2s, 4s, 8s, 16s) and gives
+     * up after [MAX_RECONNECT_ATTEMPTS] tries — at that point the user
+     * must manually press Start.
+     *
+     * The cached MediaProjection token ([lastResultData]) is reused so
+     * system-audio mode survives the reconnect cycle.
+     */
+    private fun tryReconnect() {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            scope.launch {
+                overlay?.setStatus("Reconnect failed after $MAX_RECONNECT_ATTEMPTS attempts — tap Start to retry")
+            }
+            return
+        }
+        reconnectJob?.cancel()
+        val delayMs = RECONNECT_BASE_DELAY_MS shl reconnectAttempts
+        reconnectAttempts++
+        reconnectJob = scope.launch {
+            overlay?.setStatus("Reconnecting in ${delayMs}ms (attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)...")
+            delay(delayMs)
+            // Bail out if the user manually restarted or stopped while we
+            // were waiting.
+            if (running) return@launch
+            val s = AppSettings.load(this@LiveTranslateService)
+            if (s.apiKey.isBlank()) return@launch
+            val useSystem = s.audioSource == "system" && lastResultData != null
+            startForegroundIfNeeded(useSystemAudio = useSystem)
+            try {
+                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
+            } catch (e: Exception) {
+                Log.e(TAG, "reconnect attempt $reconnectAttempts failed", e)
+                tryReconnect()
             }
         }
     }
@@ -425,7 +661,11 @@ class LiveTranslateService : Service() {
         nm.notify(NOTIF_ID, buildNotification(running))
     }
 
-    private fun buildNotification(running: Boolean): Notification {
+    private fun buildNotification(
+        running: Boolean,
+        contentText: String? = null,
+        priority: Int = NotificationCompat.PRIORITY_LOW,
+    ): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -440,31 +680,38 @@ class LiveTranslateService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(
-                if (running) getString(R.string.notif_text_running)
+                contentText ?: if (running) getString(R.string.notif_text_running)
                 else getString(R.string.notif_text_paused)
             )
             .setContentIntent(openIntent)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(priority)
             .addAction(0, getString(R.string.stop), stopIntent)
             .build()
     }
 
     private fun notifyStatus(text: String) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val n = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_title))
-            .setContentText(text)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
-        nm.notify(NOTIF_ID, n)
+        nm.notify(
+            NOTIF_ID,
+            buildNotification(
+                running = running,
+                contentText = text,
+                priority = NotificationCompat.PRIORITY_DEFAULT,
+            )
+        )
     }
 
     companion object {
+        @Volatile private var pipelineRunning = false
+
+        fun isPipelineRunning(): Boolean = pipelineRunning
+
         private const val TAG = "LiveTranslateService"
         private const val CHANNEL_ID = "live_translate"
         private const val NOTIF_ID = 1
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val RECONNECT_BASE_DELAY_MS = 1000L
 
         const val ACTION_START = "com.faqxd.livesub.android.START"
         const val ACTION_STOP = "com.faqxd.livesub.android.STOP"

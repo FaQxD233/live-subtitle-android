@@ -93,8 +93,17 @@ jobs:
             -Pandroid.injected.signing.store.file="$ANDROID_KEYSTORE_PATH" \
             -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD" \
-            || gradle --no-daemon assembleRelease
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+
+      - name: Verify release APK signature
+        if: steps.keystore.outputs.have_keystore == 'true'
+        shell: bash
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "No release APK found"; exit 1; fi
+          echo "Verifying $APK"
+          "$ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner" verify --verbose "$APK"
 
       - name: Build Debug APK (no keystore)
         if: steps.keystore.outputs.have_keystore != 'true'
