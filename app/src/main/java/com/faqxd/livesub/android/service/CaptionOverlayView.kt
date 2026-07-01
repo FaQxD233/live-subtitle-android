@@ -3,8 +3,6 @@ package com.faqxd.livesub.android.service
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -61,19 +59,6 @@ class CaptionOverlayView(
     private var isRunning = false
 
     private enum class StatusKind { IDLE, CONNECTING, CONNECTED, ERROR }
-
-    // ---- Streaming cursor (blinking) ----
-    // While the pipeline is running we append a soft caret to the output so the
-    // user can tell the difference between "stalled" and "actively translating".
-    private val cursorHandler = Handler(Looper.getMainLooper())
-    private var cursorVisible = false
-    private val cursorRunnable = object : Runnable {
-        override fun run() {
-            cursorVisible = !cursorVisible
-            refreshOutput()
-            cursorHandler.postDelayed(this, CURSOR_BLINK_MS)
-        }
-    }
 
     // ---- View references ----
     private lateinit var rootView: View
@@ -168,7 +153,6 @@ class CaptionOverlayView(
 
     fun detach() {
         if (!attached) return
-        stopCursorBlink()
         try {
             windowManager.removeView(rootView)
         } catch (_: Exception) {}
@@ -227,23 +211,7 @@ class CaptionOverlayView(
     fun setRunningState(running: Boolean) {
         isRunning = running
         toggleBtn.text = context.getString(if (running) R.string.pause else R.string.start)
-        if (running) {
-            startCursorBlink()
-        } else {
-            stopCursorBlink()
-        }
         refreshOutput()
-    }
-
-    private fun startCursorBlink() {
-        cursorHandler.removeCallbacks(cursorRunnable)
-        cursorVisible = true
-        cursorHandler.postDelayed(cursorRunnable, CURSOR_BLINK_MS)
-    }
-
-    private fun stopCursorBlink() {
-        cursorHandler.removeCallbacks(cursorRunnable)
-        cursorVisible = false
     }
 
     /** Re-apply fontSize / opacity / showOriginal without re-inflating. */
@@ -306,7 +274,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        var text = combineLineLimited(outCommitted, outDraft, MAX_OUTPUT_LINES)
+        var text = combineLineLimited(outCommitted, outDraft, computeMaxOutputLines())
         if (text.isEmpty()) {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -315,9 +283,6 @@ class CaptionOverlayView(
             } else {
                 "—"
             }
-        } else if (isRunning && cursorVisible) {
-            // Append a blinking caret to signal "still translating".
-            text += CURSOR_GLYPH
         }
         if (outputView.text.toString() != text) {
             outputView.text = text
@@ -327,7 +292,7 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = combineLineLimited(inCommitted, inDraft, MAX_INPUT_LINES)
+        val text = combineLineLimited(inCommitted, inDraft, computeMaxInputLines())
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
@@ -342,6 +307,33 @@ class CaptionOverlayView(
         if (first.isNotBlank()) lines.addAll(first.trim('\n').lines())
         if (second.isNotBlank()) lines.addAll(second.trim('\n').lines())
         return lines.takeLast(maxLines).joinToString("\n")
+    }
+
+    /**
+     * Compute max output lines based on current overlay height and font size.
+     * Output ScrollView takes layout_weight=1 (fills remaining space after header/divider/input/controls).
+     * Estimate available height and divide by line height.
+     */
+    private fun computeMaxOutputLines(): Int {
+        val totalHeight = layoutParams.height
+        val fontSize = settings.fontSize.toFloat()
+        val lineHeightPx = fontSize * density * 1.2f  // 1.2 line spacing multiplier (default)
+        // Subtract fixed overhead: header ~40dp, divider+input ~100dp, controls ~50dp, padding ~30dp
+        val fixedOverheadDp = if (settings.showOriginal) 220f else 120f
+        val fixedOverheadPx = fixedOverheadDp * density
+        val availableHeightPx = (totalHeight - fixedOverheadPx).coerceAtLeast(lineHeightPx * 2)
+        return (availableHeightPx / lineHeightPx).toInt().coerceIn(2, 50)
+    }
+
+    /**
+     * Compute max input lines. Input ScrollView has fixed 80dp height.
+     */
+    private fun computeMaxInputLines(): Int {
+        val inputScrollHeightDp = 80f
+        val fontSize = settings.fontSize * 0.6f  // input is 60% of output
+        val lineHeightPx = fontSize * density * 1.2f
+        val availableHeightPx = inputScrollHeightDp * density
+        return (availableHeightPx / lineHeightPx).toInt().coerceIn(2, 20)
     }
 
     private fun refreshStatus() {
@@ -508,9 +500,5 @@ class CaptionOverlayView(
 
     companion object {
         private const val MAX_STATUS_CHARS = 80
-        private const val MAX_OUTPUT_LINES = 5
-        private const val MAX_INPUT_LINES = 5
-        private const val CURSOR_BLINK_MS = 500L
-        private const val CURSOR_GLYPH = "▌"
     }
 }
