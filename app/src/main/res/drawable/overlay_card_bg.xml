@@ -1,12 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <gradient
-        android:angle="90"
-        android:startColor="#1A1A1E"
-        android:endColor="#28282A" />
-    <corners android:radius="16dp" />
-    <stroke
-        android:width="1dp"
-        android:color="#20FFFFFF" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background gradient: 135° diagonal, three stops -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="135"
+                android:startColor="#1E1E22"
+                android:centerColor="#24242A"
+                android:endColor="#2A2A32"
+                android:type="linear" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+    <!-- Border: 19% white, overlaid on gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="1dp"
+                android:color="#30FFFFFF" />
+            <corners android:radius="18dp" />
+        </shape>
+    </item>
+</layer-list>

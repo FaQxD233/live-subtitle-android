@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <size
-        android:width="10dp"
-        android:height="10dp" />
-    <solid android:color="@color/status_idle" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Outer glow (30% opacity, larger radius) -->
+    <item>
+        <shape android:shape="oval">
+            <size
+                android:width="12dp"
+                android:height="12dp" />
+            <solid android:color="#4DFFFFFF" />
+        </shape>
+    </item>
+    <!-- Inner core (solid color, centered, smaller) -->
+    <item
+        android:width="7dp"
+        android:height="7dp"
+        android:gravity="center">
+        <shape android:shape="oval">
+            <solid android:color="@color/status_idle" />
+        </shape>
+    </item>
+</layer-list>

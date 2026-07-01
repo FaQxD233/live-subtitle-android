@@ -26,8 +26,8 @@
         android:outlineSpotShadowColor="#CC000000"
         android:minWidth="280dp"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="12dp">
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="14dp">
 
         <!-- Header: status dot + status text + lang badge + close btn -->
         <LinearLayout
