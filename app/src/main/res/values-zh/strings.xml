@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LiveBuddy</string>
+    <string name="app_subtitle">Gemini Live 实时语音翻译</string>
+    <string name="settings_title">设置</string>
+
+    <!-- Notification -->
+    <string name="notif_channel_id">live_translate</string>
+    <string name="notif_channel_name">实时翻译</string>
+    <string name="notif_title">Gemini 实时翻译</string>
+    <string name="notif_text_running">翻译中… 点击打开</string>
+    <string name="notif_text_paused">已暂停</string>
+
+    <!-- Main -->
+    <string name="start">开始</string>
+    <string name="stop">停止</string>
+    <string name="pause">暂停</string>
+    <string name="clear">清空</string>
+    <string name="show">显示</string>
+    <string name="hide">隐藏</string>
+    <string name="open_settings">设置</string>
+    <string name="swap_direction">切换方向</string>
+    <string name="status_idle">空闲</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_stopped">已停止</string>
+    <string name="floating_overlay_idle_hint">运行时将显示悬浮字幕窗口。</string>
+    <string name="floating_overlay_hint">悬浮字幕窗口将显示在其他应用上方。</string>
+
+    <!-- Overlay -->
+    <string name="overlay_close">关闭</string>
+    <string name="overlay_resize_top_left">调整左上角大小</string>
+    <string name="overlay_resize_top_right">调整右上角大小</string>
+    <string name="overlay_resize_bottom_left">调整左下角大小</string>
+    <string name="overlay_resize_bottom_right">调整右下角大小</string>
+
+    <!-- Settings -->
+    <string name="section_connection">连接设置</string>
+    <string name="section_audio">音频设置</string>
+    <string name="section_appearance">外观设置</string>
+    <string name="section_advanced">高级设置</string>
+    <string name="api_key_hint">粘贴你的 Google Gemini API 密钥</string>
+    <string name="api_base_hint">API Base URL（默认：Google 官方）</string>
+    <string name="audio_source">音频源</string>
+    <string name="audio_source_mic">麦克风</string>
+    <string name="audio_source_system">系统音频（回环）</string>
+    <string name="translate_to">翻译到</string>
+    <string name="playback_volume">播放音量</string>
+    <string name="echo_target">回声目标语言音频</string>
+    <string name="font_size">字幕字体大小</string>
+    <string name="bg_opacity">背景不透明度</string>
+    <string name="show_original">显示原文（源语言）</string>
+    <string name="system_prompt">系统提示词</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+
+    <!-- Permissions -->
+    <string name="perm_overlay_rationale">悬浮字幕需要"显示在其他应用上层"权限。</string>
+    <string name="perm_mic_rationale">需要麦克风访问权限以翻译语音。</string>
+    <string name="perm_notif_rationale">需要通知权限以保持翻译服务在前台运行。</string>
+    <string name="perm_system_audio_rationale">捕获系统音频需要屏幕录制权限。不会捕获视频，仅捕获音频。</string>
+
+    <!-- Errors -->
+    <string name="err_no_api_key">请在设置中填写你的 Google Gemini API 密钥。</string>
+    <string name="err_no_overlay_perm">悬浮窗权限被拒绝。</string>
+</resources>

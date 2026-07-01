@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="Real-time speech translation powered by Gemini Live"
+            android:text="@string/app_subtitle"
             android:textColor="@color/text_secondary_light"
             android:textSize="11sp" />
 

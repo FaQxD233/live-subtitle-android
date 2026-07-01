@@ -19,7 +19,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="Real-time speech translation powered by Gemini Live"
+        android:text="@string/app_subtitle"
         android:textColor="@color/text_secondary_light"
         android:textSize="12sp" />
 
@@ -76,7 +76,6 @@
                     android:background="@drawable/lang_badge_bg"
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="4dp"
-                    android:text="→ Chinese (Simplified)"
                     android:textColor="#FFFFFF"
                     android:textSize="12sp"
                     android:textStyle="bold" />
@@ -90,7 +89,7 @@
                     android:layout_marginStart="10dp"
                     android:minWidth="0dp"
                     android:paddingHorizontal="14dp"
-                    android:text="Swap Direction"
+                    android:text="@string/swap_direction"
                     android:textSize="12sp" />
             </LinearLayout>
 
