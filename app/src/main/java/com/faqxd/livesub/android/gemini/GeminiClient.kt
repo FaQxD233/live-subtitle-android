@@ -67,7 +67,7 @@ class GeminiClient(
     ) {
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
-        this.targetLang = targetLang
+        this.targetLang = AppSettings.normalizeTargetLanguage(targetLang)
         // In BILI modes the system prompt is built-in and the user's
         // custom prompt is ignored — keep it stored anyway so switching
         // back to LIVE mode restores the user's preference.
@@ -240,9 +240,9 @@ class GeminiClient(
      *
      * Direction mapping:
      *  - BILI_ZH_EN + "a2b" → 中→英 (targetLanguageCode = "en")
-     *  - BILI_ZH_EN + "b2a" → 英→中 (targetLanguageCode = "zh")
+     *  - BILI_ZH_EN + "b2a" → 英→中 (targetLanguageCode = "zh-CN")
      *  - BILI_ZH_JP + "a2b" → 中→日 (targetLanguageCode = "ja")
-     *  - BILI_ZH_JP + "b2a" → 日→中 (targetLanguageCode = "zh")
+     *  - BILI_ZH_JP + "b2a" → 日→中 (targetLanguageCode = "zh-CN")
      *
      * `echoTargetLanguage` is forced false in BILI mode — we don't want
      * the model to "echo" if the user happens to speak the target language
@@ -254,8 +254,8 @@ class GeminiClient(
      */
     private fun buildBiliSetup(mode: AppSettings.Mode): JSONObject {
         val tgtCode = when (mode) {
-            AppSettings.Mode.BILI_ZH_EN -> if (biliDirection == "b2a") "zh" else "en"
-            AppSettings.Mode.BILI_ZH_JP -> if (biliDirection == "b2a") "zh" else "ja"
+            AppSettings.Mode.BILI_ZH_EN -> if (biliDirection == "b2a") "zh-CN" else "en"
+            AppSettings.Mode.BILI_ZH_JP -> if (biliDirection == "b2a") "zh-CN" else "ja"
             else -> "en"
         }
         Log.i(TAG, "buildBiliSetup: mode=$mode direction=$biliDirection targetLanguageCode=$tgtCode")

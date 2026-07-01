@@ -15,8 +15,8 @@ import androidx.core.content.edit
  *  - apiKey              — Google Gemini API key (stored plaintext, like the
  *                          Windows version; users on rooted devices can read it).
  *  - apiBase             — Override for the API base URL (proxy / regional mirror).
- *  - targetLanguage      — ISO-639-1 code, e.g. "zh", "es", "ja". Used only
- *                          in [Mode.LIVE] (unidirectional translate).
+ *  - targetLanguage      — BCP-47 code, e.g. "zh-CN", "es", "ja". Used
+ *                          only in [Mode.LIVE] (unidirectional translate).
  *  - audioSource         — "mic" or "system" (loopback via MediaProjection).
  *  - fontSize            — Caption font size in sp.
  *  - bgOpacity           — 0..1 background alpha for the overlay card.
@@ -36,7 +36,7 @@ import androidx.core.content.edit
 data class AppSettings(
     var apiKey: String = "",
     var apiBase: String = DEFAULT_API_BASE,
-    var targetLanguage: String = "zh",
+    var targetLanguage: String = "zh-CN",
     var audioSource: String = "mic",
     var fontSize: Int = 16,
     var bgOpacity: Float = 0.6f,
@@ -109,7 +109,9 @@ data class AppSettings(
             return AppSettings(
                 apiKey = prefs.getString("api_key", "") ?: "",
                 apiBase = prefs.getString("api_base", DEFAULT_API_BASE) ?: DEFAULT_API_BASE,
-                targetLanguage = prefs.getString("target_language", "zh") ?: "zh",
+                targetLanguage = normalizeTargetLanguage(
+                    prefs.getString("target_language", "zh-CN") ?: "zh-CN",
+                ),
                 audioSource = prefs.getString("audio_source", "mic") ?: "mic",
                 fontSize = prefs.getInt("font_size", 16),
                 bgOpacity = prefs.getFloat("bg_opacity", 0.6f),
@@ -145,6 +147,12 @@ data class AppSettings(
                 else -> raw
             }
         }
+
+        fun normalizeTargetLanguage(raw: String): String =
+            when (raw.trim()) {
+                "zh", "zh-Hans" -> "zh-CN"
+                else -> raw.trim().ifBlank { "zh-CN" }
+            }
     }
 
     fun save(context: Context) {
@@ -152,7 +160,7 @@ data class AppSettings(
         prefs.edit {
             putString("api_key", apiKey)
             putString("api_base", apiBase)
-            putString("target_language", targetLanguage)
+            putString("target_language", normalizeTargetLanguage(targetLanguage))
             putString("audio_source", audioSource)
             putInt("font_size", fontSize)
             putFloat("bg_opacity", bgOpacity)

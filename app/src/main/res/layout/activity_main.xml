@@ -144,7 +144,7 @@
                     android:background="@drawable/lang_badge_bg"
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="4dp"
-                    android:text="→ Chinese"
+                    android:text="→ Chinese (Simplified)"
                     android:textColor="#FFFFFF"
                     android:textSize="12sp"
                     android:textStyle="bold" />

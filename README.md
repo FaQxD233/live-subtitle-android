@@ -69,7 +69,7 @@ gradle installDebug
 1. 启动 App
 2. 进入 **Settings**：
    - 填入 Gemini API Key（[在 Google AI Studio 申请](https://aistudio.google.com/apikey)）
-   - 选择目标语言（默认中文）
+   - 选择目标语言（默认简体中文）
    - 选择音源：
      - **Microphone** — 直接采集麦克风
      - **System audio (loopback)** — 通过 MediaProjection 捕获系统输出（屏幕录制权限，只录音频）
