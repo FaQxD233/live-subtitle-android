@@ -3,6 +3,8 @@ package com.faqxd.livesub.android.service
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -59,6 +61,19 @@ class CaptionOverlayView(
     private var isRunning = false
 
     private enum class StatusKind { IDLE, CONNECTING, CONNECTED, ERROR }
+
+    // ---- Streaming cursor (blinking) ----
+    // While the pipeline is running we append a soft caret to the output so the
+    // user can tell the difference between "stalled" and "actively translating".
+    private val cursorHandler = Handler(Looper.getMainLooper())
+    private var cursorVisible = false
+    private val cursorRunnable = object : Runnable {
+        override fun run() {
+            cursorVisible = !cursorVisible
+            refreshOutput()
+            cursorHandler.postDelayed(this, CURSOR_BLINK_MS)
+        }
+    }
 
     // ---- View references ----
     private lateinit var rootView: View
@@ -153,6 +168,7 @@ class CaptionOverlayView(
 
     fun detach() {
         if (!attached) return
+        stopCursorBlink()
         try {
             windowManager.removeView(rootView)
         } catch (_: Exception) {}
@@ -211,6 +227,23 @@ class CaptionOverlayView(
     fun setRunningState(running: Boolean) {
         isRunning = running
         toggleBtn.text = context.getString(if (running) R.string.pause else R.string.start)
+        if (running) {
+            startCursorBlink()
+        } else {
+            stopCursorBlink()
+        }
+        refreshOutput()
+    }
+
+    private fun startCursorBlink() {
+        cursorHandler.removeCallbacks(cursorRunnable)
+        cursorVisible = true
+        cursorHandler.postDelayed(cursorRunnable, CURSOR_BLINK_MS)
+    }
+
+    private fun stopCursorBlink() {
+        cursorHandler.removeCallbacks(cursorRunnable)
+        cursorVisible = false
     }
 
     /** Re-apply fontSize / opacity / showOriginal without re-inflating. */
@@ -220,9 +253,14 @@ class CaptionOverlayView(
         // only the size changes via setTextSize.
         outputView.setTypeface(outputView.typeface, android.graphics.Typeface.BOLD)
         outputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, settings.fontSize.toFloat())
-        // Input font (60% of output, italic)
+        // Add subtle shadow to output text for depth (radius 4dp, offset 2dp down, 50% black)
+        outputView.setShadowLayer(4f * density, 0f, 2f * density, 0x80000000.toInt())
+
+        // Input font (60% of output, italic, slightly more muted)
         inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
+        inputView.setTextColor(0x99FFFFFF.toInt())  // 60% white (was 70%)
+
         // Language badge + direction-swap button.
         updateDirectionUi(settings)
         // Original visibility
@@ -269,7 +307,18 @@ class CaptionOverlayView(
 
     private fun refreshOutput() {
         var text = combineLineLimited(outCommitted, outDraft, MAX_OUTPUT_LINES)
-        if (text.isEmpty()) text = "—"
+        if (text.isEmpty()) {
+            // No caption yet: show a connecting placeholder while the pipeline
+            // is spinning up, otherwise the idle em-dash.
+            text = if (isRunning && statusKind == StatusKind.CONNECTING) {
+                context.getString(R.string.status_connecting)
+            } else {
+                "—"
+            }
+        } else if (isRunning && cursorVisible) {
+            // Append a blinking caret to signal "still translating".
+            text += CURSOR_GLYPH
+        }
         if (outputView.text.toString() != text) {
             outputView.text = text
             // Auto-scroll to bottom so the latest caption is always visible.
@@ -461,5 +510,7 @@ class CaptionOverlayView(
         private const val MAX_STATUS_CHARS = 80
         private const val MAX_OUTPUT_LINES = 5
         private const val MAX_INPUT_LINES = 5
+        private const val CURSOR_BLINK_MS = 500L
+        private const val CURSOR_GLYPH = "▌"
     }
 }
