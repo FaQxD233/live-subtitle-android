@@ -5,6 +5,10 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.ArrayDeque
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Port of `audio.py:AudioPlayer`.
@@ -21,7 +25,8 @@ class AudioPlayer(
     private val sampleRate: Int = GEMINI_OUTPUT_RATE,
     @Volatile var gain: Float = 0.8f,
 ) {
-    private val lock = Any()
+    private val lock = ReentrantLock()
+    private val notEmpty = lock.newCondition()
     // Chunk-based queue — avoids the O(n²) copying that FloatArray
     // concatenation caused on every enqueuePcm16 call.
     private val chunkQueue = ArrayDeque<FloatArray>()
@@ -76,7 +81,7 @@ class AudioPlayer(
             .order(ByteOrder.LITTLE_ENDIAN)
             .asShortBuffer()
         for (i in floats.indices) floats[i] = sb.get(i) / 32768f
-        synchronized(lock) {
+        lock.withLock {
             chunkQueue.addLast(floats)
             queuedSamples += floats.size
             // Cap buffer at 5 seconds to avoid runaway memory if AudioTrack
@@ -87,7 +92,7 @@ class AudioPlayer(
                 queuedSamples -= (removed.size - headOffset)
                 headOffset = 0
             }
-            lock.notifyAll()
+            notEmpty.signalAll()
         }
     }
 
@@ -98,15 +103,15 @@ class AudioPlayer(
 
     fun stop() {
         running = false
-        synchronized(lock) {
-            lock.notifyAll()
+        lock.withLock {
+            notEmpty.signalAll()
         }
         thread?.join(500)
         thread = null
         try { track?.stop() } catch (_: Exception) {}
         try { track?.release() } catch (_: Exception) {}
         track = null
-        synchronized(lock) {
+        lock.withLock {
             chunkQueue.clear()
             headOffset = 0
             queuedSamples = 0
@@ -120,9 +125,9 @@ class AudioPlayer(
         while (running) {
             var written = 0
             var pauseForIdle = false
-            synchronized(lock) {
+            lock.withLock {
                 if (chunkQueue.isEmpty()) {
-                    lock.wait(IDLE_PAUSE_DELAY_MS)
+                    notEmpty.await(IDLE_PAUSE_DELAY_MS, TimeUnit.MILLISECONDS)
                     if (!running) return
                     if (chunkQueue.isEmpty()) {
                         pauseForIdle = true
