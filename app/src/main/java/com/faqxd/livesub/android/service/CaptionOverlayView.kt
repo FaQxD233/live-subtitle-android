@@ -167,7 +167,7 @@ class CaptionOverlayView(
             outDraft = t
         } else {
             if (outDraft.isNotEmpty()) {
-                outCommitted = appendLineLimited(outCommitted, outDraft, MAX_OUTPUT_LINES)
+                outCommitted = appendLineLimited(outCommitted, outDraft, computeMaxOutputLines())
             }
             outDraft = t
         }
@@ -180,7 +180,7 @@ class CaptionOverlayView(
             inDraft = t
         } else {
             if (inDraft.isNotEmpty()) {
-                inCommitted = appendLineLimited(inCommitted, inDraft, MAX_INPUT_LINES)
+                inCommitted = appendLineLimited(inCommitted, inDraft, computeMaxInputLines())
             }
             inDraft = t
         }
