@@ -50,7 +50,7 @@
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:text="@string/status_idle"
-                android:textColor="#B4FFFFFF"
+                android:textColor="@color/hud_text_tertiary"
                 android:textSize="11sp" />
 
             <TextView
@@ -61,7 +61,7 @@
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="2dp"
                 android:text="→"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/hud_text_primary"
                 android:textSize="10sp"
                 android:textStyle="bold" />
 
@@ -75,7 +75,7 @@
                 android:minWidth="28dp"
                 android:padding="0dp"
                 android:text="⇄"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/hud_text_primary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -87,7 +87,7 @@
                 android:background="@drawable/overlay_btn_secondary"
                 android:contentDescription="@string/overlay_close"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
-                android:tint="#FFFFFF" />
+                android:tint="@color/hud_text_primary" />
         </LinearLayout>
 
         <!-- Translated output (primary, scrollable, fills remaining space) -->
@@ -107,7 +107,7 @@
                 android:layout_height="wrap_content"
                 android:fontFamily="sans-serif-medium"
                 android:text="—"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/hud_text_primary"
                 android:textSize="16sp"
                 android:textStyle="bold" />
         </ScrollView>
@@ -118,7 +118,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginVertical="6dp"
-            android:background="#1AFFFFFF" />
+            android:background="@color/hud_divider" />
 
         <!-- Original input (secondary, scrollable, fixed height) -->
         <ScrollView
@@ -134,7 +134,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text=""
-                android:textColor="#B4FFFFFF"
+                android:textColor="@color/hud_input_text"
                 android:textSize="12sp"
                 android:textStyle="italic" />
         </ScrollView>
@@ -155,7 +155,7 @@
                 android:minWidth="76dp"
                 android:paddingHorizontal="12dp"
                 android:text="@string/start"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/hud_text_primary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -168,7 +168,7 @@
                 android:minWidth="64dp"
                 android:paddingHorizontal="12dp"
                 android:text="@string/clear"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/hud_text_primary"
                 android:textSize="12sp" />
 
             <View
@@ -183,7 +183,7 @@
                 android:background="@drawable/overlay_btn_secondary"
                 android:contentDescription="@string/open_settings"
                 android:src="@android:drawable/ic_menu_preferences"
-                android:tint="#FFFFFF" />
+                android:tint="@color/hud_text_primary" />
         </LinearLayout>
     </LinearLayout>
 

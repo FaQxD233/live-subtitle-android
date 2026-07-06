@@ -1,17 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Accent palette (Material You-inspired violet), mirrors Windows version -->
-    <color name="accent">#7C5CFF</color>
-    <color name="accent_bright">#9D7FFF</color>
-    <color name="accent_pressed">#6A4DE0</color>
+    <!-- Accent palette (Nordic Forest muted steel blue), mirrors Windows HUD tokens. -->
+    <color name="accent">#5A8F9E</color>
+    <color name="accent_bright">#71A5B5</color>
+    <color name="accent_pressed">#437482</color>
 
     <color name="bg_light">#F4F5F8</color>
     <color name="text_primary_light">#1F2330</color>
     <color name="text_secondary_light">#6A6F7D</color>
     <color name="divider_light">#E3E6EC</color>
 
-    <color name="card_dark">#1A1A1E</color>
-    <color name="card_dark_dim">#28282A</color>
+    <color name="card_dark">#1E2530</color>
+    <color name="card_dark_dim">#28303D</color>
+    <color name="hud_bg_bottom">#181D26</color>
+    <color name="hud_text_primary">#EAECEF</color>
+    <color name="hud_text_secondary">#DC8A95A5</color>
+    <color name="hud_text_tertiary">#8C8A95A5</color>
+    <color name="hud_input_text">#B48A95A5</color>
+    <color name="hud_divider">#2D8A95A5</color>
+    <color name="hud_border">#328A95A5</color>
+    <color name="hud_btn_bg">#14FFFFFF</color>
+    <color name="hud_btn_bg_hover">#28FFFFFF</color>
+    <color name="hud_btn_bg_pressed">#0CFFFFFF</color>
 
     <color name="status_idle">#B4B4B4</color>
     <color name="status_connecting">#FFC53D</color>

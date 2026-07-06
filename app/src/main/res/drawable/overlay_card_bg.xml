@@ -5,9 +5,9 @@
         <shape android:shape="rectangle">
             <gradient
                 android:angle="135"
-                android:startColor="#1E1E22"
-                android:centerColor="#24242A"
-                android:endColor="#2A2A32"
+                android:startColor="@color/card_dark"
+                android:centerColor="@color/card_dark_dim"
+                android:endColor="@color/hud_bg_bottom"
                 android:type="linear" />
             <corners android:radius="18dp" />
         </shape>
@@ -17,7 +17,7 @@
         <shape android:shape="rectangle">
             <stroke
                 android:width="1dp"
-                android:color="#30FFFFFF" />
+                android:color="@color/hud_border" />
             <corners android:radius="18dp" />
         </shape>
     </item>
