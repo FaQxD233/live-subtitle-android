@@ -227,7 +227,7 @@ class CaptionOverlayView(
         // Input font (60% of output, italic, slightly more muted)
         inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
-        inputView.setTextColor(0x99FFFFFF.toInt())  // 60% white (was 70%)
+        inputView.setTextColor(context.getColor(R.color.hud_input_text))
 
         // Language badge + direction-swap button.
         updateDirectionUi(settings)
@@ -303,9 +303,10 @@ class CaptionOverlayView(
         combineLineLimited(existing, addition, maxLines)
 
     private fun combineLineLimited(first: String, second: String, maxLines: Int): String {
-        val lines = ArrayList<String>(maxLines + 2)
-        if (first.isNotBlank()) lines.addAll(first.trim('\n').lines())
-        if (second.isNotBlank()) lines.addAll(second.trim('\n').lines())
+        val text = listOf(first.trim(), second.trim())
+            .filter { it.isNotBlank() }
+            .joinToString("")
+        val lines = text.lines()
         return lines.takeLast(maxLines).joinToString("\n")
     }
 
