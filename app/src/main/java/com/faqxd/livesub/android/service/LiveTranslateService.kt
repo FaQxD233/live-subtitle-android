@@ -175,7 +175,7 @@ class LiveTranslateService : Service() {
     private fun toggleDirection() {
         val s = AppSettings.load(this)
         Log.i(TAG, "toggleDirection: prevDir=${s.liveDirection} running=$running")
-        s.liveDirection = if (s.liveDirection == "b2a") "a2b" else "b2a"
+        s.toggleDirection()
         s.save(this)
         settings = s
         overlay?.refreshDirection(s)

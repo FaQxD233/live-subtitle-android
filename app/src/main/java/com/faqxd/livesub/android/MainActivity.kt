@@ -16,7 +16,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
-import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.google.android.material.button.MaterialButton
 
@@ -137,8 +136,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySettingsToUi() {
-        langBadge.text = directionLabel(settings)
-        directionBtn.visibility = View.VISIBLE
+        langBadge.text = settings.directionLabel()
+        // a2b/b2a coincide when the target already is Simplified Chinese.
+        directionBtn.visibility =
+            if (settings.canToggleDirection) View.VISIBLE else View.GONE
         inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
         if (settings.apiKey.isBlank()) {
             showHint(getString(R.string.err_no_api_key))
@@ -187,7 +188,7 @@ class MainActivity : AppCompatActivity() {
      * `translationConfig.targetLanguageCode` takes effect.
      */
     private fun onDirectionToggleClicked() {
-        settings.liveDirection = if (settings.liveDirection == "b2a") "a2b" else "b2a"
+        settings.toggleDirection()
         settings.save(this)
         applySettingsToUi()
         if (LiveTranslateService.isPipelineRunning()) {
@@ -196,15 +197,6 @@ class MainActivity : AppCompatActivity() {
                 LiveTranslateService.restartIntent(this)
             )
         }
-    }
-
-    private fun directionLabel(s: AppSettings): String {
-        val target = s.normalizedTargetLanguage
-        if (target == AppSettings.SIMPLIFIED_CHINESE) {
-            return "→ ${Languages.nameFor(target)}"
-        }
-        val targetName = Languages.shortNameFor(target)
-        return if (s.liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
     }
 
     private fun continueStartFlow() {

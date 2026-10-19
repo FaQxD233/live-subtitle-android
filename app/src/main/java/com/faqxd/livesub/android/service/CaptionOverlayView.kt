@@ -18,7 +18,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
-import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.transcript.SegmentMerger
 import kotlin.math.abs
 
@@ -364,15 +363,11 @@ class CaptionOverlayView(
     }
 
     private fun updateDirectionUi(s: AppSettings) {
-        val target = s.normalizedTargetLanguage
-        langBadge.text = if (target == AppSettings.SIMPLIFIED_CHINESE) {
-            "→ ${Languages.shortNameFor(target)}"
-        } else {
-            val targetName = Languages.shortNameFor(target)
-            if (s.liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
-        }
+        langBadge.text = s.directionLabel()
         miniLabel.text = langBadge.text
-        directionBtn.visibility = View.VISIBLE
+        // a2b/b2a coincide when the target already is Simplified Chinese.
+        directionBtn.visibility =
+            if (s.canToggleDirection) View.VISIBLE else View.GONE
     }
 
     // ---------- internals ----------

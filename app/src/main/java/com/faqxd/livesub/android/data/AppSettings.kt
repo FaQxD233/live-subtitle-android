@@ -52,6 +52,32 @@ data class AppSettings(
             normalizedTargetLanguage
         }
 
+    /**
+     * Whether a direction toggle makes sense: when the target already is
+     * Simplified Chinese, a2b and b2a coincide and the swap button hides.
+     */
+    val canToggleDirection: Boolean
+        get() = normalizedTargetLanguage != SIMPLIFIED_CHINESE
+
+    /** Flip Live direction (a2b ↔ b2a) in place. */
+    fun toggleDirection() {
+        liveDirection = if (liveDirection == "b2a") "a2b" else "b2a"
+    }
+
+    /**
+     * Human-readable direction badge shared by the main screen, the overlay
+     * and the minimized pill: "中 → EN" (or reversed), or just "→ 中" when
+     * the target is Simplified Chinese regardless of the source language.
+     */
+    fun directionLabel(): String {
+        val target = normalizedTargetLanguage
+        if (target == SIMPLIFIED_CHINESE) {
+            return "→ ${Languages.shortNameFor(target)}"
+        }
+        val targetName = Languages.shortNameFor(target)
+        return if (liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
+    }
+
     companion object {
         const val DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
         const val SIMPLIFIED_CHINESE = "zh-CN"
