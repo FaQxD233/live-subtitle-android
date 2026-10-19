@@ -3,6 +3,7 @@ package com.faqxd.livesub.android.audio
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
@@ -49,6 +50,15 @@ class AudioPlayer(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .apply {
+                        // API 29+: forbid playback capture by ordinary apps —
+                        // including our own MediaProjection loopback. Without
+                        // this, system-audio mode records the translation and
+                        // feeds it back to Gemini (echo loop).
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_SYSTEM)
+                        }
+                    }
                     .build()
             )
             .setAudioFormat(
