@@ -1,6 +1,7 @@
 package com.faqxd.livesub.android
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.widget.ArrayAdapter
@@ -128,11 +129,20 @@ class SettingsActivity : AppCompatActivity() {
         )
         langSpinner.setSelection(Languages.ALL.indexOfFirst { it.code == settings.targetLanguage }.coerceAtLeast(0))
 
+        // Loopback capture exists only on Android 10+; don't offer it on
+        // older systems (AppSettings also normalizes a stale "system").
+        val supportsSystemAudio = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         sourceSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
-            listOf(getString(R.string.audio_source_mic), getString(R.string.audio_source_system))
+            if (supportsSystemAudio) {
+                listOf(getString(R.string.audio_source_mic), getString(R.string.audio_source_system))
+            } else {
+                listOf(getString(R.string.audio_source_mic))
+            }
         )
-        sourceSpinner.setSelection(if (settings.audioSource == "system") 1 else 0)
+        sourceSpinner.setSelection(
+            if (supportsSystemAudio && settings.audioSource == "system") 1 else 0
+        )
 
         volumeSlider.progress = (settings.playbackVolume * 100).toInt()
         echoCheck.isChecked = settings.echoTargetLanguage

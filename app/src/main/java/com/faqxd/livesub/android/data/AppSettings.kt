@@ -2,6 +2,7 @@ package com.faqxd.livesub.android.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import androidx.core.content.edit
 
 /**
@@ -81,11 +82,17 @@ data class AppSettings(
             // previous install. These names are not available on the current
             // v1beta Live API path, so silently swap to the current default.
             val liveModel = migrateLiveModel(rawLiveModel)
+            // AudioPlaybackCapture exists only on Android 10+ (API 29); an
+            // old persisted "system" value would crash the pipeline, so
+            // normalize to the microphone on older systems.
+            val audioSource = prefs.getString("audio_source", "mic") ?: "mic"
             return AppSettings(
                 apiKey = prefs.getString("api_key", "") ?: "",
                 apiBase = prefs.getString("api_base", DEFAULT_API_BASE) ?: DEFAULT_API_BASE,
                 targetLanguage = normalizeTargetLanguage(migratedTargetLanguage),
-                audioSource = prefs.getString("audio_source", "mic") ?: "mic",
+                audioSource = if (
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && audioSource == "system"
+                ) "mic" else audioSource,
                 fontSize = prefs.getInt("font_size", 16),
                 bgOpacity = prefs.getFloat("bg_opacity", 0.6f),
                 echoTargetLanguage = prefs.getBoolean("echo_target", false),

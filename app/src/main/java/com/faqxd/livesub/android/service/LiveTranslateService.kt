@@ -21,6 +21,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import com.faqxd.livesub.android.MainActivity
 import com.faqxd.livesub.android.R
@@ -332,7 +333,10 @@ class LiveTranslateService : Service() {
         ).also { capture = it }
 
         try {
-            if (s.audioSource == "system" && resultData != null) {
+            if (s.audioSource == "system" &&
+                resultData != null &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            ) {
                 startSystemCapture(cap, pendingCaptureResultCode, resultData)
             } else {
                 cap.startMicrophone(context = this)
@@ -540,6 +544,7 @@ class LiveTranslateService : Service() {
 
     // ---------- media projection ----------
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun startSystemCapture(cap: AudioCapture, resultCode: Int, data: Intent) {
         // Reuse a still-live MediaProjection when available so a restart
         // / toggle / reconnect doesn't re-prompt the user. Once a
