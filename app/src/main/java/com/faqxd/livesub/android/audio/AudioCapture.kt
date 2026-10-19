@@ -249,8 +249,11 @@ class AudioCapture(
                 chunker.append(pcm16)
 
                 // Periodic heartbeat so the user can see in logcat that
-                // audio is flowing even when Gemini returns nothing.
-                if (totalRead % (sampleRate * 4) < bufSize) {
+                // audio is flowing even when Gemini returns nothing. The
+                // modulo window must match the per-read size: with the
+                // 40 ms read block, comparing against the larger internal
+                // buffer size would print 5 duplicates per period.
+                if (totalRead % (sampleRate * 4) < readBytes) {
                     Log.d(TAG, "micLoop heartbeat: totalRead=$totalRead rms=$rms")
                 }
             }
