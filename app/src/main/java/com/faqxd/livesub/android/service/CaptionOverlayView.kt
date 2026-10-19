@@ -215,7 +215,7 @@ class CaptionOverlayView(
     fun setOutput(text: String?) {
         val finalized = outMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
-            outCommitted = appendLineLimited(outCommitted, finalized, computeMaxOutputLines())
+            outCommitted = capHistory(outCommitted + finalized, MAX_OUTPUT_CHARS)
         }
         refreshOutput()
     }
@@ -223,7 +223,7 @@ class CaptionOverlayView(
     fun setInput(text: String?) {
         val finalized = inMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
-            inCommitted = appendLineLimited(inCommitted, finalized, computeMaxInputLines())
+            inCommitted = capHistory(inCommitted + finalized, MAX_INPUT_CHARS)
         }
         refreshInput()
     }
@@ -378,7 +378,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        var text = combineLineLimited(outCommitted, outMerger.draft, computeMaxOutputLines())
+        var text = (outCommitted + outMerger.draft).trim()
         if (text.isEmpty()) {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -396,51 +396,27 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = combineLineLimited(inCommitted, inMerger.draft, computeMaxInputLines())
+        val text = (inCommitted + inMerger.draft).trim()
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
         }
     }
 
-    private fun appendLineLimited(existing: String, addition: String, maxLines: Int): String =
-        combineLineLimited(existing, addition, maxLines)
-
-    private fun combineLineLimited(first: String, second: String, maxLines: Int): String {
-        val text = listOf(first.trim(), second.trim())
-            .filter { it.isNotBlank() }
-            .joinToString("")
-        val lines = text.lines()
-        return lines.takeLast(maxLines).joinToString("\n")
-    }
-
     /**
-     * Compute max output lines based on current overlay height and font size.
-     * Output ScrollView takes layout_weight=1 (fills remaining space after header/divider/input/controls).
-     * Estimate available height and divide by line height.
+     * Keep only the newest [maxChars] characters of caption history, cutting
+     * from the head. Segments are concatenated verbatim — no per-segment
+     * trim — so spaces between words survive ("Hello" + " world" stays
+     * "Hello world"). A cut that would split a surrogate pair advances past
+     * the low half.
      */
-    private fun computeMaxOutputLines(): Int {
-        // While minimized the window wraps the pill; size the history for the
-        // card that will be shown again on expand.
-        val totalHeight = if (isMinimized) expandedHeight else layoutParams.height
-        val fontSize = settings.fontSize.toFloat()
-        val lineHeightPx = fontSize * density * 1.2f  // 1.2 line spacing multiplier (default)
-        // Subtract fixed overhead: header ~40dp, divider+input ~100dp, controls ~50dp, padding ~30dp
-        val fixedOverheadDp = if (settings.showOriginal) 220f else 120f
-        val fixedOverheadPx = fixedOverheadDp * density
-        val availableHeightPx = (totalHeight - fixedOverheadPx).coerceAtLeast(lineHeightPx * 2)
-        return (availableHeightPx / lineHeightPx).toInt().coerceIn(2, 50)
-    }
-
-    /**
-     * Compute max input lines. Input ScrollView has fixed 80dp height.
-     */
-    private fun computeMaxInputLines(): Int {
-        val inputScrollHeightDp = 80f
-        val fontSize = settings.fontSize * 0.6f  // input is 60% of output
-        val lineHeightPx = fontSize * density * 1.2f
-        val availableHeightPx = inputScrollHeightDp * density
-        return (availableHeightPx / lineHeightPx).toInt().coerceIn(2, 20)
+    private fun capHistory(text: String, maxChars: Int): String {
+        if (text.length <= maxChars) return text
+        var cut = text.length - maxChars
+        if (Character.isHighSurrogate(text[cut - 1]) && Character.isLowSurrogate(text[cut])) {
+            cut++
+        }
+        return text.substring(cut)
     }
 
     private fun refreshStatus() {
@@ -694,6 +670,10 @@ class CaptionOverlayView(
     companion object {
         private const val TAG = "CaptionOverlay"
         private const val MAX_STATUS_CHARS = 80
+        /** Newest-kept characters of translated output history. */
+        private const val MAX_OUTPUT_CHARS = 3000
+        /** Newest-kept characters of original input history. */
+        private const val MAX_INPUT_CHARS = 1500
         /**
          * Highest window opacity for which Android 12+ still lets touches
          * pass through an app overlay (the platform default maximum
