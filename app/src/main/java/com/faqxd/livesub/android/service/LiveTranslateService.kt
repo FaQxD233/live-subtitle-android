@@ -627,7 +627,7 @@ class LiveTranslateService : Service() {
                 }
             }
         }
-        override fun onDisconnected(reason: String) {
+        override fun onDisconnected(reason: String, retryable: Boolean) {
             scope.launch {
                 if (!isCurrentSession(sessionId)) return@launch
                 overlay?.setStatus("Disconnected: $reason".take(80))

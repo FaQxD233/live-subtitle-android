@@ -12,6 +12,7 @@ import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Port of `gemini_client.py:GeminiClient`.
@@ -36,13 +37,22 @@ class GeminiClient(
         fun onAudioChunk(pcm16: ByteArray)
         fun onStatus(status: String)
         fun onConnected()
-        fun onDisconnected(reason: String)
+        /**
+         * Session dropped. [retryable] hints whether an automatic reconnect
+         * makes sense (network blip) or is pointless (bad key, bad request).
+         */
+        fun onDisconnected(reason: String, retryable: Boolean)
     }
 
     @Volatile private var ws: WebSocket? = null
     @Volatile private var running = false
     @Volatile private var setupComplete = false
     @Volatile private var intentionalStop = false
+
+    // Session-level latch: onClosing / onClosed / onFailure / send failures /
+    // server "error" messages can all fire for the same drop; only the first
+    // one is forwarded to the listener.
+    private val disconnectReported = AtomicBoolean(false)
 
     private var apiKey: String = ""
     private var apiBase: String = DEFAULT_API_BASE
@@ -73,6 +83,7 @@ class GeminiClient(
         running = true
         setupComplete = false
         intentionalStop = false
+        disconnectReported.set(false)
 
         val request = Request.Builder()
             .url(buildWsUrl())
@@ -87,7 +98,7 @@ class GeminiClient(
                     ws = null
                     intentionalStop = true
                     listener.onStatus("Gemini setup send failed")
-                    listener.onDisconnected("Setup send failed")
+                    reportDisconnect("Setup send failed", retryable = true)
                     webSocket.close(1000, "setup failed")
                     return
                 }
@@ -103,6 +114,16 @@ class GeminiClient(
                 handleText(bytes.utf8())
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // Server-initiated close (e.g. 1007/1008 for invalid API key,
+                // unknown model). OkHttp only calls onClosed after the client
+                // echoes the close frame, so complete the handshake here.
+                webSocket.close(1000, null)
+                if (intentionalStop) return
+                listener.onStatus("Gemini closed: $code $reason")
+                reportDisconnect(closeReason(code, reason), isRetryableCloseCode(code))
+            }
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "ws failure", t)
                 running = false
@@ -110,16 +131,19 @@ class GeminiClient(
                 ws = null
                 if (intentionalStop) return
                 listener.onStatus("Gemini error: ${t.message ?: "unknown"}")
-                listener.onDisconnected("Error: ${t.message ?: "unknown"}")
+                reportDisconnect(
+                    "Error: ${t.message ?: "unknown"}",
+                    isRetryableFailure(response),
+                )
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                val wasIntentional = intentionalStop
                 running = false
                 setupComplete = false
                 ws = null
-                if (!wasIntentional) {
-                    listener.onDisconnected("Closed: $reason")
+                if (!intentionalStop) {
+                    listener.onStatus("Gemini closed: $code $reason")
+                    reportDisconnect(closeReason(code, reason), isRetryableCloseCode(code))
                 }
             }
         })
@@ -156,7 +180,7 @@ class GeminiClient(
             setupComplete = false
             ws = null
             listener.onStatus("Gemini audio send failed")
-            listener.onDisconnected("Audio send failed")
+            reportDisconnect("Audio send failed", retryable = true)
         }
     }
 
@@ -229,7 +253,7 @@ class GeminiClient(
             running = false
             ws?.close(1000, "server error")
             ws = null
-            listener.onDisconnected("Server error: $msg")
+            reportDisconnect("Server error: $msg", retryable = false)
             return
         }
 
@@ -285,6 +309,33 @@ class GeminiClient(
     private fun modelResourceName(model: String): String =
         if (model.startsWith("models/")) model else "models/$model"
 
+    /** Forward the first disconnect of a session to the listener. */
+    private fun reportDisconnect(reason: String, retryable: Boolean) {
+        if (!disconnectReported.compareAndSet(false, true)) return
+        listener.onDisconnected(reason, retryable)
+    }
+
+    /** Human-readable disconnect reason for a close frame: `"code reason"`. */
+    private fun closeReason(code: Int, reason: String): String {
+        val trimmed = reason.trim()
+        return if (trimmed.isEmpty()) "$code" else "$code $trimmed"
+    }
+
+    private fun isRetryableCloseCode(code: Int): Boolean =
+        code in RETRYABLE_CLOSE_CODES
+
+    /**
+     * Classify an [onFailure]. A null response means a network-level IO
+     * error (DNS, timeout, connection reset) — worth retrying. Handshake
+     * rejections are retryable only for transient HTTP codes (408/429/5xx);
+     * other 4xx responses (401/403/404...) are permanent.
+     */
+    private fun isRetryableFailure(response: Response?): Boolean {
+        if (response == null) return true
+        val code = response.code
+        return code == 408 || code == 429 || code in 500..599
+    }
+
     companion object {
         private const val TAG = "GeminiClient"
         private val client: OkHttpClient = OkHttpClient.Builder()
@@ -294,5 +345,13 @@ class GeminiClient(
         const val DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
         private const val GEMINI_WS_PATH =
             "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+
+        /**
+         * Close codes worth an automatic reconnect (mirrors the Windows
+         * client): normal/internal closure, abnormal loss, and the
+         * "try again" class of server rejections.
+         */
+        private val RETRYABLE_CLOSE_CODES =
+            setOf(1000, 1001, 1006, 1011, 1012, 1013, 1014)
     }
 }
