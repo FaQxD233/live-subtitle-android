@@ -622,11 +622,14 @@ class CaptionOverlayView(
         }
     }
 
-    /** Write the current window geometry to prefs (drag/resize end). */
+    /** Write the current window geometry to prefs (drag/resize end). While
+     * minimized the layout params are WRAP_CONTENT (-2), which would wipe
+     * the saved card size — persist the expanded geometry instead. */
     private fun persistGeometry() {
+        val width = if (isMinimized) expandedWidth else layoutParams.width
+        val height = if (isMinimized) expandedHeight else layoutParams.height
         AppSettings.saveOverlayGeometry(
-            context, layoutParams.x, layoutParams.y,
-            layoutParams.width, layoutParams.height,
+            context, layoutParams.x, layoutParams.y, width, height,
         )
     }
 
