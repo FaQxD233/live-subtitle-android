@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -74,6 +75,12 @@ class LiveTranslateService : Service() {
     // Auto-reconnect state for unexpected WebSocket disconnects.
     private var reconnectJob: Job? = null
     private var reconnectAttempts = 0
+    // [SystemClock.elapsedRealtime] of the last successful connection.
+    // A disconnect after the connection stayed up for RECONNECT_STABLE_MS
+    // counts as healthy and resets the backoff; a connection that drops
+    // sooner does not, so a server that kills sessions right after setup
+    // can't keep us reconnecting forever.
+    @Volatile private var connectedAtMs = 0L
 
     // Cached MediaProjection grant from the most recent ACTION_START.
     // Reused by ACTION_RESTART so the user can change API key / language /
@@ -150,18 +157,7 @@ class LiveTranslateService : Service() {
         stopPipeline()
         scope.launch {
             delay(300)
-            val latest = AppSettings.load(this@LiveTranslateService)
-            val useSystem = latest.audioSource == "system" && lastResultData != null
-            startForegroundIfNeeded(useSystemAudio = useSystem)
-            try {
-                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
-                if (latest.audioSource == "system" && !useSystem) {
-                    overlay?.setStatus("System audio permission required")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "restart after direction toggle failed", e)
-                overlay?.setStatus("Restart failed: ${e.message}")
-            }
+            startPipelineWithCachedGrant()
         }
     }
 
@@ -350,6 +346,7 @@ class LiveTranslateService : Service() {
         currentSessionId++
         running = false
         pipelineRunning = false
+        connectedAtMs = 0
         cancelReconnect()
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
@@ -368,6 +365,7 @@ class LiveTranslateService : Service() {
         currentSessionId++
         pendingCaptureResultCode = 0
         pendingCaptureResultData = null
+        connectedAtMs = 0
         if (!running && client == null && capture == null) {
             pipelineRunning = false
             cancelReconnect()
@@ -418,18 +416,7 @@ class LiveTranslateService : Service() {
         // MediaProjection token so system-audio mode survives the cycle
         // instead of silently starting the wrong audio source.
         cancelReconnect()
-        val s = AppSettings.load(this)
-        val useSystem = s.audioSource == "system" && lastResultData != null
-        startForegroundIfNeeded(useSystemAudio = useSystem)
-        try {
-            startPipeline(lastResultCode, if (useSystem) lastResultData else null)
-            if (s.audioSource == "system" && !useSystem) {
-                overlay?.setStatus("System audio permission required")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "restart after toggle failed", e)
-            overlay?.setStatus("Restart failed: ${e.message}")
-        }
+        startPipelineWithCachedGrant()
     }
 
     /**
@@ -455,18 +442,30 @@ class LiveTranslateService : Service() {
         stopPipeline()
         scope.launch {
             delay(300)
-            val s = AppSettings.load(this@LiveTranslateService)
-            val useSystem = s.audioSource == "system" && lastResultData != null
+            startPipelineWithCachedGrant()
+        }
+    }
+
+    /**
+     * Bring the service back to the foreground (if needed) and start the
+     * pipeline with the most recent settings, reusing the cached
+     * MediaProjection grant when the user still wants system audio.
+     *
+     * Every restart path — direction toggle, overlay pause/resume, settings
+     * hot-restart, auto-reconnect — funnels through here so foreground
+     * promotion and failure handling are identical: a throw from either
+     * start step permanently fails the pipeline with the reason instead of
+     * crashing the surrounding coroutine.
+     */
+    private fun startPipelineWithCachedGrant() {
+        val s = AppSettings.load(this)
+        val useSystem = s.audioSource == "system" && lastResultData != null
+        try {
             startForegroundIfNeeded(useSystemAudio = useSystem)
-            try {
-                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
-                if (s.audioSource == "system" && !useSystem) {
-                    overlay?.setStatus("System audio permission required")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "restart failed", e)
-                overlay?.setStatus("Restart failed: ${e.message}")
-            }
+            startPipeline(lastResultCode, if (useSystem) lastResultData else null)
+        } catch (e: Exception) {
+            Log.e(TAG, "pipeline start failed", e)
+            failPipeline("Start failed: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
@@ -619,7 +618,10 @@ class LiveTranslateService : Service() {
         override fun onConnected() {
             scope.launch {
                 if (!isCurrentSession(sessionId)) return@launch
-                reconnectAttempts = 0
+                // Note when the connection became healthy; the reconnect
+                // counter is reset on disconnect only if the session lasted
+                // long enough (see onDisconnected).
+                connectedAtMs = SystemClock.elapsedRealtime()
                 overlay?.setStatus("Connected")
                 startCaptureForSession(sessionId)
                 if (isCurrentSession(sessionId) && running) {
@@ -630,7 +632,18 @@ class LiveTranslateService : Service() {
         override fun onDisconnected(reason: String, retryable: Boolean) {
             scope.launch {
                 if (!isCurrentSession(sessionId)) return@launch
-                overlay?.setStatus("Disconnected: $reason".take(80))
+                // A connection that stayed up for RECONNECT_STABLE_MS counts
+                // as healthy: reset the backoff so the next drop starts a
+                // fresh retry cycle. A session killed right after setup does
+                // not, bounding the total retry loop.
+                val connectedAt = connectedAtMs
+                connectedAtMs = 0
+                if (connectedAt > 0 &&
+                    SystemClock.elapsedRealtime() - connectedAt >= RECONNECT_STABLE_MS
+                ) {
+                    reconnectAttempts = 0
+                }
+                val status = "Disconnected: $reason".take(80)
                 if (running) {
                     // Unexpected disconnect — stop capture but keep the
                     // overlay visible so the user sees the status.
@@ -640,7 +653,15 @@ class LiveTranslateService : Service() {
                     capture?.stop(); capture = null
                     player?.stop(); player = null
                     overlay?.setRunningState(false)
-                    tryReconnect()
+                    if (retryable) {
+                        tryReconnect(reason)
+                    } else {
+                        // Permanent failure (bad key, rejected setup...):
+                        // stop for good instead of hammering the API.
+                        failPipeline(status)
+                    }
+                } else {
+                    overlay?.setStatus(status)
                 }
                 updateNotification(running = false)
             }
@@ -663,16 +684,18 @@ class LiveTranslateService : Service() {
     /**
      * Attempt to re-establish the WebSocket session after an unexpected
      * disconnect. Uses exponential backoff (1s, 2s, 4s, 8s, 16s) and gives
-     * up after [MAX_RECONNECT_ATTEMPTS] tries — at that point the user
-     * must manually press Start.
+     * up after [MAX_RECONNECT_ATTEMPTS] tries — at that point the last
+     * disconnect [reason] is shown and the user must manually press Start.
      *
      * The cached MediaProjection token ([lastResultData]) is reused so
      * system-audio mode survives the reconnect cycle.
      */
-    private fun tryReconnect() {
+    private fun tryReconnect(reason: String) {
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             scope.launch {
-                overlay?.setStatus("Reconnect failed after $MAX_RECONNECT_ATTEMPTS attempts — tap Start to retry")
+                overlay?.setStatus(
+                    "Reconnect failed after $MAX_RECONNECT_ATTEMPTS attempts: $reason".take(80)
+                )
             }
             return
         }
@@ -680,21 +703,14 @@ class LiveTranslateService : Service() {
         val delayMs = RECONNECT_BASE_DELAY_MS shl reconnectAttempts
         reconnectAttempts++
         reconnectJob = scope.launch {
-            overlay?.setStatus("Reconnecting in ${delayMs}ms (attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)...")
+            overlay?.setStatus("Reconnecting in ${delayMs / 1000}s (attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)...")
             delay(delayMs)
             // Bail out if the user manually restarted or stopped while we
             // were waiting.
             if (running) return@launch
             val s = AppSettings.load(this@LiveTranslateService)
             if (s.apiKey.isBlank()) return@launch
-            val useSystem = s.audioSource == "system" && lastResultData != null
-            startForegroundIfNeeded(useSystemAudio = useSystem)
-            try {
-                startPipeline(lastResultCode, if (useSystem) lastResultData else null)
-            } catch (e: Exception) {
-                Log.e(TAG, "reconnect attempt $reconnectAttempts failed", e)
-                tryReconnect()
-            }
+            startPipelineWithCachedGrant()
         }
     }
 
@@ -789,6 +805,8 @@ class LiveTranslateService : Service() {
         private const val NOTIF_ID = 1
         private const val MAX_RECONNECT_ATTEMPTS = 5
         private const val RECONNECT_BASE_DELAY_MS = 1000L
+        /** A connection up at least this long resets the reconnect backoff. */
+        private const val RECONNECT_STABLE_MS = 10_000L
 
         const val ACTION_START = "com.faqxd.livesub.android.START"
         const val ACTION_STOP = "com.faqxd.livesub.android.STOP"
