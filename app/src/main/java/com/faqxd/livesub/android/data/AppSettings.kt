@@ -58,9 +58,12 @@ data class AppSettings(
         const val DEFAULT_LIVE_MODEL = "gemini-3.5-live-translate-preview"
         private const val PREFS_NAME = "livebuddy_settings"
 
+        /** Backing preferences file for [load] / [save]; also for change listeners. */
+        fun prefs(context: Context): SharedPreferences =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
         fun load(context: Context): AppSettings {
-            val prefs: SharedPreferences =
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val prefs = prefs(context)
             val oldMode = prefs.getString("mode", "live") ?: "live"
             val rawTargetLanguage = prefs.getString("target_language", SIMPLIFIED_CHINESE)
                 ?: SIMPLIFIED_CHINESE
@@ -135,8 +138,7 @@ data class AppSettings(
     }
 
     fun save(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit {
+        prefs(context).edit {
             putString("api_key", apiKey)
             putString("api_base", apiBase)
             putString("target_language", normalizeTargetLanguage(targetLanguage))

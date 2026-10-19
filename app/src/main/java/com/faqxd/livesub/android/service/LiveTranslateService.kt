@@ -113,6 +113,33 @@ class LiveTranslateService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        // Apply appearance / volume changes live while the pipeline runs.
+        // The framework holds the listener only weakly, so keep a strong
+        // field reference (see [prefsListener]).
+        AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    /**
+     * A preference was written (usually by [com.faqxd.livesub.android.SettingsActivity]).
+     * Cosmetic changes (font size, opacity, show-original, volume) apply
+     * immediately; pipeline-affecting fields are handled separately by the
+     * restart intent SettingsActivity sends, so a restart path is
+     * deliberately not triggered here. Runs on the main thread.
+     */
+    private val prefsListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            applyLiveSettings()
+        }
+
+    private fun applyLiveSettings() {
+        val s = AppSettings.load(this).also { settings = it }
+        overlay?.updateSettings(s)
+        overlay?.applyStyle()
+        player?.setVolume(s.playbackVolume)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -207,6 +234,7 @@ class LiveTranslateService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
         stopPipeline()
         // Forget the projection token so a later start doesn't try to use a
         // stale grant. ACTION_RESTART preserves it (see [restartPipelineIfNeeded]).
