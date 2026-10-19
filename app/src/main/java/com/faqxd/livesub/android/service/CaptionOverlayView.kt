@@ -334,10 +334,11 @@ class CaptionOverlayView(
         if (!initialized || minimized == isMinimized) return
         isMinimized = minimized
         if (minimized) {
-            // Persist the expanded geometry before collapsing into the pill.
-            persistGeometry()
+            // Remember the expanded size BEFORE persisting: persistGeometry
+            // reads the expanded geometry while isMinimized is already true.
             expandedWidth = layoutParams.width
             expandedHeight = layoutParams.height
+            persistGeometry()
             layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT
             layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT
         } else {
@@ -646,8 +647,8 @@ class CaptionOverlayView(
      * minimized the layout params are WRAP_CONTENT (-2), which would wipe
      * the saved card size — persist the expanded geometry instead. */
     private fun persistGeometry() {
-        val width = if (isMinimized) expandedWidth else layoutParams.width
-        val height = if (isMinimized) expandedHeight else layoutParams.height
+        val width = if (isMinimized && expandedWidth > 0) expandedWidth else layoutParams.width
+        val height = if (isMinimized && expandedHeight > 0) expandedHeight else layoutParams.height
         AppSettings.saveOverlayGeometry(
             context, layoutParams.x, layoutParams.y, width, height,
         )
