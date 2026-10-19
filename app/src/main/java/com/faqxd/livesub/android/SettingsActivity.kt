@@ -185,13 +185,47 @@ class SettingsActivity : AppCompatActivity() {
         apiBaseEdit.setText(settings.apiBase)
         if (apiBaseEdit.text.isBlank()) apiBaseEdit.hint = AppSettings.DEFAULT_API_BASE
 
-        // Searchable language picker: typing filters by name or code; the
-        // code is embedded in each row so "pt-BR" finds Portuguese (Brazil).
+        // Searchable language picker. Tapping the field shows the FULL
+        // list (the filter is reset to empty); typing filters by name or
+        // code — the code is embedded in each row so "pt-BR" finds
+        // Portuguese (Brazil).
         val langDisplay = Languages.ALL.map { "${it.name}  (${it.code})" }
-        langPicker.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, langDisplay)
-        )
+        val langAdapter = object : ArrayAdapter<String>(
+            this, android.R.layout.simple_dropdown_item_1line, ArrayList(langDisplay)
+        ) {
+            override fun getFilter() = object : android.widget.Filter() {
+                override fun performFiltering(constraint: CharSequence?): FilterResults {
+                    val query = constraint?.toString()?.trim()?.lowercase().orEmpty()
+                    val matches = if (query.isEmpty()) {
+                        langDisplay
+                    } else {
+                        langDisplay.filter { it.lowercase().contains(query) }
+                    }
+                    return FilterResults().apply { values = matches; count = matches.size }
+                }
+                @Suppress("UNCHECKED_CAST")
+                override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+                    val matches = results?.values as? List<String> ?: return
+                    setNotifyOnChange(false)
+                    clear()
+                    addAll(matches)
+                    notifyDataSetChanged()
+                }
+            }
+        }
+        langPicker.setAdapter(langAdapter)
         langPicker.setText(Languages.nameFor(settings.targetLanguage), false)
+        // Tap = open the full list; free typing filters as usual.
+        langPicker.setOnClickListener {
+            langPicker.filter.filter(
+                "",
+                android.widget.Filter.FilterListener { _ -> langPicker.showDropDown() },
+            )
+        }
+        // Leaving without picking restores the current selection label.
+        langPicker.setOnDismissListener {
+            langPicker.setText(Languages.nameFor(pickedLanguage ?: settings.targetLanguage), false)
+        }
         langPicker.setOnItemClickListener { _, _, position, _ ->
             val item = langPicker.adapter.getItem(position) as? String ?: return@setOnItemClickListener
             val code = item.substringAfterLast('(').removeSuffix(")").trim()
