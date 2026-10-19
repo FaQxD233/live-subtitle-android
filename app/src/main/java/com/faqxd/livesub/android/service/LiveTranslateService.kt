@@ -59,6 +59,9 @@ class LiveTranslateService : Service() {
     private var player: AudioPlayer? = null
     private var mediaProjection: MediaProjection? = null
     @Volatile private var running = false
+    private val notificationManager by lazy {
+        getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    }
 
     // Auto-reconnect state for unexpected WebSocket disconnects.
     private var reconnectJob: Job? = null
@@ -109,15 +112,7 @@ class LiveTranslateService : Service() {
                 startForegroundIfNeeded(useSystemAudio = resultData != null)
                 startPipeline(resultCode, resultData)
             }
-            ACTION_STOP -> {
-                stopPipeline()
-                // Forget the projection token on explicit stop so a later
-                // restart doesn't try to use a stale grant. ACTION_RESTART
-                // preserves it (see [restartPipelineIfNeeded]).
-                teardownProjection()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
+            ACTION_STOP -> shutdown()
             ACTION_TOGGLE -> togglePipeline()
             ACTION_RESTART -> restartPipelineIfNeeded()
         }
@@ -164,8 +159,29 @@ class LiveTranslateService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopPipeline()
+        // Forget the projection token so a later start doesn't try to use a
+        // stale grant. ACTION_RESTART preserves it (see [restartPipelineIfNeeded]).
         teardownProjection()
+        // Windows added through WindowManager outlive the service unless
+        // removed explicitly; without this the HUD stays on screen after
+        // stopping from the main screen or the notification.
+        overlay?.detach()
+        overlay = null
+        // stopPipeline() re-posts the status notification after the system
+        // already dropped the foreground one; don't leave it behind.
+        notificationManager.cancel(NOTIF_ID)
         scope.coroutineContext[Job]?.cancel()
+    }
+
+    /**
+     * Leave the foreground and stop the service. All teardown (pipeline,
+     * projection grant, overlay, notification) happens in [onDestroy], so
+     * every stop path — notification action, overlay close button, or
+     * `stopService()` from [MainActivity] — cleans up the same way.
+     */
+    private fun shutdown() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     // ---------- pipeline ----------
@@ -422,11 +438,7 @@ class LiveTranslateService : Service() {
                         )
                     }
                     override fun onCloseClicked() {
-                        stopPipeline()
-                        teardownProjection()
-                        overlay?.detach()
-                        stopForeground(STOP_FOREGROUND_REMOVE)
-                        stopSelf()
+                        shutdown()
                     }
                     override fun onToggleDirectionClicked() {
                         toggleDirection()
@@ -613,7 +625,7 @@ class LiveTranslateService : Service() {
     // ---------- notification ----------
 
     private fun startForegroundIfNeeded(useSystemAudio: Boolean) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm = notificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 val channel = NotificationChannel(
@@ -639,8 +651,7 @@ class LiveTranslateService : Service() {
     }
 
     private fun updateNotification(running: Boolean) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID, buildNotification(running))
+        notificationManager.notify(NOTIF_ID, buildNotification(running))
     }
 
     private fun buildNotification(
@@ -673,8 +684,7 @@ class LiveTranslateService : Service() {
     }
 
     private fun notifyStatus(text: String) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(
+        notificationManager.notify(
             NOTIF_ID,
             buildNotification(
                 running = running,
