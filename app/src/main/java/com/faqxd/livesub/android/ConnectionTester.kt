@@ -104,6 +104,9 @@ object ConnectionTester {
 
         latch.await(20, TimeUnit.SECONDS)
         ws.cancel()
+        // Drop pooled keep-alive sockets immediately instead of waiting for
+        // the idle timeout — this client is single-shot.
+        client.connectionPool.evictAll()
         client.dispatcher.executorService.shutdown()
         return result.get()
     }
