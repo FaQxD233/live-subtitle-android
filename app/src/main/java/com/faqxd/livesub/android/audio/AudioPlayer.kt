@@ -112,6 +112,19 @@ class AudioPlayer(
         track?.setVolume(gain)
     }
 
+    /**
+     * Drop all queued audio (e.g. after a server "interrupted" event) and
+     * leave the track ready for the next chunk.
+     */
+    fun flush() {
+        lock.withLock {
+            chunkQueue.clear()
+            headOffset = 0
+            queuedSamples = 0
+            notEmpty.signalAll()
+        }
+    }
+
     fun stop() {
         running = false
         lock.withLock {

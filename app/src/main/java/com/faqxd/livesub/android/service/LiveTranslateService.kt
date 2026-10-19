@@ -676,6 +676,15 @@ class LiveTranslateService : Service() {
             // (OkHttp dispatcher in this case) to avoid stalling the WS reader.
             if (isCurrentSession(sessionId)) player?.enqueuePcm16(pcm16)
         }
+        override fun onInterrupted() {
+            scope.launch {
+                if (isCurrentSession(sessionId)) {
+                    // The user talked over the model: anything still queued
+                    // is stale and must not keep playing.
+                    player?.flush()
+                }
+            }
+        }
         override fun onSetupSent() {
             scope.launch {
                 if (isCurrentSession(sessionId)) {

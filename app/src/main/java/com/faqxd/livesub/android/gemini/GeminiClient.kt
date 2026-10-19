@@ -35,6 +35,8 @@ class GeminiClient(
         fun onInputTranscript(text: String)
         fun onOutputTranscript(text: String)
         fun onAudioChunk(pcm16: ByteArray)
+        /** The user interrupted the model; any queued playback is stale. */
+        fun onInterrupted()
         /** Socket open and the setup envelope has been sent; awaiting setupComplete. */
         fun onSetupSent()
         fun onConnected()
@@ -288,7 +290,10 @@ class GeminiClient(
 
         // Log interruption / turn-complete events for debugging latency.
         if (content.optBoolean("turnComplete", false)) Log.v(TAG, "turnComplete")
-        if (content.optBoolean("interrupted", false)) Log.v(TAG, "interrupted")
+        if (content.optBoolean("interrupted", false)) {
+            Log.v(TAG, "interrupted")
+            listener.onInterrupted()
+        }
     }
 
     private fun modelResourceName(model: String): String =
