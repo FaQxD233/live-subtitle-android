@@ -7,6 +7,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
@@ -16,6 +17,7 @@ import android.widget.TextView
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.Languages
+import kotlin.math.abs
 
 /**
  * Port of `hud_window.py:HUDWindow`.
@@ -32,6 +34,8 @@ import com.faqxd.livesub.android.data.Languages
  *    translated output (primary, scrollable, **bold**), original input
  *    (secondary, scrollable, italic), control bar (Toggle / Clear /
  *    Original / Settings).
+ *  - Can collapse into a small draggable pill ([setMinimized]); captions
+ *    keep updating in the background and show up again when expanded.
  *
  * All public methods must be called on the main thread.
  */
@@ -63,6 +67,12 @@ class CaptionOverlayView(
 
     private enum class StatusKind { IDLE, CONNECTING, CONNECTED, ERROR }
 
+    // ---- Minimized pill state ----
+    private var isMinimized = false
+    // Card size to restore when the pill is expanded again.
+    private var expandedWidth = 0
+    private var expandedHeight = 0
+
     // ---- View references ----
     private lateinit var rootView: View
     private lateinit var overlayRoot: View
@@ -70,6 +80,7 @@ class CaptionOverlayView(
     private lateinit var statusDot: View
     private lateinit var statusTextView: TextView
     private lateinit var langBadge: TextView
+    private lateinit var minimizeBtn: ImageButton
     private lateinit var closeBtn: ImageButton
     private lateinit var outputScroll: ScrollView
     private lateinit var outputView: TextView
@@ -85,11 +96,15 @@ class CaptionOverlayView(
     private lateinit var resizeTR: ImageView
     private lateinit var resizeBL: ImageView
     private lateinit var resizeBR: ImageView
+    private lateinit var miniPill: View
+    private lateinit var miniStatusDot: View
+    private lateinit var miniLabel: TextView
 
     private val windowManager: WindowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private val density: Float = context.resources.displayMetrics.density
+    private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
 
     /** Minimum overlay dimensions in pixels. */
     private val minWidthPx: Int = (300 * density).toInt()
@@ -112,6 +127,7 @@ class CaptionOverlayView(
         statusDot = rootView.findViewById(R.id.overlayStatusDot)
         statusTextView = rootView.findViewById(R.id.overlayStatusText)
         langBadge = rootView.findViewById(R.id.overlayLangBadge)
+        minimizeBtn = rootView.findViewById(R.id.overlayMinimizeBtn)
         closeBtn = rootView.findViewById(R.id.overlayCloseBtn)
         outputScroll = rootView.findViewById(R.id.overlayOutputScroll)
         outputView = rootView.findViewById(R.id.overlayOutput)
@@ -127,6 +143,9 @@ class CaptionOverlayView(
         resizeTR = rootView.findViewById(R.id.overlayResizeTR)
         resizeBL = rootView.findViewById(R.id.overlayResizeBL)
         resizeBR = rootView.findViewById(R.id.overlayResizeBR)
+        miniPill = rootView.findViewById(R.id.overlayMinimized)
+        miniStatusDot = rootView.findViewById(R.id.overlayMiniStatusDot)
+        miniLabel = rootView.findViewById(R.id.overlayMiniLabel)
 
         toggleBtn.setOnClickListener { callbacks.onToggleClicked() }
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
@@ -137,6 +156,8 @@ class CaptionOverlayView(
             android.util.Log.i("CaptionOverlay", "direction swap button clicked")
             callbacks.onToggleDirectionClicked()
         }
+        minimizeBtn.setOnClickListener { setMinimized(true) }
+        miniPill.setOnClickListener { setMinimized(false) }
 
         installDragHandler()
         installResizeHandlers()
@@ -271,6 +292,35 @@ class CaptionOverlayView(
         settings = s
     }
 
+    /**
+     * Collapse the HUD into the small pill, or expand it back. Captions keep
+     * updating while collapsed; expanding restores the previous card size,
+     * keeps the card on screen and jumps to the newest lines.
+     */
+    fun setMinimized(minimized: Boolean) {
+        if (!initialized || minimized == isMinimized) return
+        isMinimized = minimized
+        if (minimized) {
+            expandedWidth = layoutParams.width
+            expandedHeight = layoutParams.height
+            layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT
+            layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+        } else {
+            layoutParams.width = expandedWidth
+            layoutParams.height = expandedHeight
+            keepOnScreen()
+        }
+        val cardVisibility = if (minimized) View.GONE else View.VISIBLE
+        overlayRoot.visibility = cardVisibility
+        listOf(resizeTL, resizeTR, resizeBL, resizeBR).forEach { it.visibility = cardVisibility }
+        miniPill.visibility = if (minimized) View.VISIBLE else View.GONE
+        updateWindowLayout()
+        if (!minimized) {
+            outputScroll.post { outputScroll.fullScroll(View.FOCUS_DOWN) }
+            inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
     private fun updateDirectionUi(s: AppSettings) {
         val target = s.normalizedTargetLanguage
         langBadge.text = if (target == AppSettings.SIMPLIFIED_CHINESE) {
@@ -279,6 +329,7 @@ class CaptionOverlayView(
             val targetName = Languages.shortNameFor(target)
             if (s.liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
         }
+        miniLabel.text = langBadge.text
         directionBtn.visibility = View.VISIBLE
     }
 
@@ -327,7 +378,9 @@ class CaptionOverlayView(
      * Estimate available height and divide by line height.
      */
     private fun computeMaxOutputLines(): Int {
-        val totalHeight = layoutParams.height
+        // While minimized the window wraps the pill; size the history for the
+        // card that will be shown again on expand.
+        val totalHeight = if (isMinimized) expandedHeight else layoutParams.height
         val fontSize = settings.fontSize.toFloat()
         val lineHeightPx = fontSize * density * 1.2f  // 1.2 line spacing multiplier (default)
         // Subtract fixed overhead: header ~40dp, divider+input ~100dp, controls ~50dp, padding ~30dp
@@ -361,6 +414,24 @@ class CaptionOverlayView(
         val color = context.getColor(colorRes)
         // Status dot is a View with a drawable background; tint it.
         statusDot.background?.setTint(color)
+        miniStatusDot.background?.setTint(color)
+    }
+
+    /** Push [layoutParams] to the window; no-op while detached. */
+    private fun updateWindowLayout() {
+        if (!attached) return
+        try {
+            windowManager.updateViewLayout(rootView, layoutParams)
+        } catch (_: Exception) {}
+    }
+
+    /** Clamp the window position so the whole card stays on screen. */
+    private fun keepOnScreen() {
+        val metrics = context.resources.displayMetrics
+        val maxX = (metrics.widthPixels - layoutParams.width).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - layoutParams.height).coerceAtLeast(0)
+        layoutParams.x = layoutParams.x.coerceIn(0, maxX)
+        layoutParams.y = layoutParams.y.coerceIn(0, maxY)
     }
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
@@ -396,32 +467,7 @@ class CaptionOverlayView(
      * eventFilter on `card + output_edit + input_edit`.
      */
     private fun installDragHandler() {
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
-        val listener = View.OnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = layoutParams.x
-                    initialY = layoutParams.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
-                    layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
-                    try {
-                        windowManager.updateViewLayout(rootView, layoutParams)
-                    } catch (_: Exception) {}
-                    true
-                }
-                MotionEvent.ACTION_UP -> true
-                else -> false
-            }
-        }
+        val listener = makeDragListener()
         // Install on the whole card body + the header. ScrollView children
         // (outputScroll / inputScroll) keep their own touch handling so the
         // user can still scroll through caption history — same as the
@@ -429,6 +475,51 @@ class CaptionOverlayView(
         // the eventFilter only kicked in on MouseButtonPress.
         overlayRoot.setOnTouchListener(listener)
         header.setOnTouchListener(listener)
+        // The minimized pill drags the same way; a tap expands it.
+        miniPill.setOnTouchListener(makeDragListener(clickOnTap = true))
+    }
+
+    /**
+     * Move the window with the finger. Movement within the touch slop is
+     * ignored so a tap doesn't nudge the window; with [clickOnTap] such a
+     * tap is forwarded to the view's click listener instead.
+     */
+    private fun makeDragListener(clickOnTap: Boolean = false): View.OnTouchListener {
+        var initialX = 0
+        var initialY = 0
+        var initialTouchX = 0f
+        var initialTouchY = 0f
+        var dragging = false
+
+        return View.OnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = layoutParams.x
+                    initialY = layoutParams.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
+                    if (!dragging && abs(dx) < touchSlop && abs(dy) < touchSlop) {
+                        return@OnTouchListener true
+                    }
+                    dragging = true
+                    layoutParams.x = initialX + dx.toInt()
+                    layoutParams.y = initialY + dy.toInt()
+                    updateWindowLayout()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (clickOnTap && !dragging) view.performClick()
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     /**
@@ -499,9 +590,7 @@ class CaptionOverlayView(
                     layoutParams.y = newY
                     layoutParams.width = newW
                     layoutParams.height = newH
-                    try {
-                        windowManager.updateViewLayout(rootView, layoutParams)
-                    } catch (_: Exception) {}
+                    updateWindowLayout()
                     true
                 }
                 MotionEvent.ACTION_UP -> true

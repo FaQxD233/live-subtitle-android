@@ -9,6 +9,10 @@
 
     The whole `overlayRoot` is a drag handle; child buttons consume their own
     touches first, so dragging only fires when pressing empty card areas.
+
+    `overlayMinimized` is the small pill shown instead of the card and the
+    resize handles while the HUD is minimized; it is draggable and a tap
+    expands the HUD again.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -29,7 +33,7 @@
         android:paddingHorizontal="18dp"
         android:paddingVertical="14dp">
 
-        <!-- Header: status dot + status text + lang badge + close btn -->
+        <!-- Header: status dot + status text + lang badge + direction + minimize + close -->
         <LinearLayout
             android:id="@+id/overlayHeader"
             android:layout_width="match_parent"
@@ -78,6 +82,18 @@
                 android:textColor="@color/hud_text_primary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/overlayMinimizeBtn"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/overlay_btn_secondary"
+                android:contentDescription="@string/overlay_minimize"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_overlay_minimize"
+                android:tint="@color/hud_text_primary" />
 
             <ImageButton
                 android:id="@+id/overlayCloseBtn"
@@ -246,4 +262,46 @@
         android:contentDescription="@string/overlay_resize_bottom_right"
         android:padding="2dp"
         android:src="@drawable/resize_handle" />
+
+    <!-- Minimized pill: status dot + direction label + expand icon. The
+         margin leaves room for the elevation shadow inside the window. -->
+    <LinearLayout
+        android:id="@+id/overlayMinimized"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="6dp"
+        android:background="@drawable/overlay_pill_bg"
+        android:contentDescription="@string/overlay_expand"
+        android:elevation="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="6dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/overlayMiniStatusDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:background="@drawable/status_dot" />
+
+        <TextView
+            android:id="@+id/overlayMiniLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="→"
+            android:textColor="@color/hud_text_primary"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="8dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_overlay_expand"
+            android:tint="@color/hud_text_primary" />
+    </LinearLayout>
 </FrameLayout>

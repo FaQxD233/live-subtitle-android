@@ -33,6 +33,8 @@
     <string name="overlay_resize_top_right">调整右上角大小</string>
     <string name="overlay_resize_bottom_left">调整左下角大小</string>
     <string name="overlay_resize_bottom_right">调整右下角大小</string>
+    <string name="overlay_minimize">最小化</string>
+    <string name="overlay_expand">展开</string>
     <string name="overlay_original">原文</string>
     <string name="overlay_original_desc">显示原文</string>
 

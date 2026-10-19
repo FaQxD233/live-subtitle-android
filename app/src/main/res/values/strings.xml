@@ -32,6 +32,8 @@
     <string name="overlay_resize_top_right">Resize top-right</string>
     <string name="overlay_resize_bottom_left">Resize bottom-left</string>
     <string name="overlay_resize_bottom_right">Resize bottom-right</string>
+    <string name="overlay_minimize">Minimize</string>
+    <string name="overlay_expand">Expand</string>
     <string name="overlay_original">Orig</string>
     <string name="overlay_original_desc">Show original transcript</string>
 
