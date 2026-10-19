@@ -46,6 +46,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default ("tools platform-tools") also asks for the obsolete
+          # "tools" package, which current sdkmanager versions no longer
+          # provide, so the step fails.
+          packages: platform-tools
 
       - name: Install Android packages
         shell: bash
