@@ -72,6 +72,8 @@ class CaptionOverlayView(
     private val outMerger = SegmentMerger()
     private var inCommitted = ""
     private val inMerger = SegmentMerger()
+    // Most recent finalized output segment, shown alone in latest-only mode.
+    private var lastOutFinalized = ""
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
@@ -216,6 +218,7 @@ class CaptionOverlayView(
     fun setOutput(text: String?) {
         val finalized = outMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
+            lastOutFinalized = finalized
             outCommitted = capHistory(outCommitted + finalized, MAX_OUTPUT_CHARS)
         }
         refreshOutput()
@@ -246,6 +249,7 @@ class CaptionOverlayView(
     fun clear() {
         outCommitted = ""
         outMerger.reset()
+        lastOutFinalized = ""
         inCommitted = ""
         inMerger.reset()
         refreshOutput()
@@ -289,6 +293,9 @@ class CaptionOverlayView(
         val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
         rootView.alpha = alpha
         refreshStatus()
+        // showLatestOnly / showOriginal flips must re-render the captions.
+        refreshOutput()
+        refreshInput()
     }
 
     /**
@@ -375,18 +382,24 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        var text = (outCommitted + outMerger.draft).trim()
-        if (text.isEmpty()) {
+        // Latest-only mode shows just the sentence being spoken right now
+        // (last finalized segment + the streaming draft) instead of history.
+        val text = if (settings.showLatestOnly) {
+            (lastOutFinalized + outMerger.draft).trim()
+        } else {
+            (outCommitted + outMerger.draft).trim()
+        }.let { if (it.isEmpty()) it else it.take(MAX_OUTPUT_CHARS) }
+        val display = text.ifEmpty {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
-            text = if (isRunning && statusKind == StatusKind.CONNECTING) {
+            if (isRunning && statusKind == StatusKind.CONNECTING) {
                 context.getString(R.string.status_connecting)
             } else {
                 "—"
             }
         }
-        if (outputView.text.toString() != text) {
-            outputView.text = text
+        if (outputView.text.toString() != display) {
+            outputView.text = display
             // Auto-scroll to bottom so the latest caption is always visible.
             outputScroll.post { outputScroll.fullScroll(View.FOCUS_DOWN) }
         }

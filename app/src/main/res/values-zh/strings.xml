@@ -79,6 +79,7 @@
     <string name="font_size">字幕字体大小</string>
     <string name="bg_opacity">背景不透明度</string>
     <string name="show_original">显示原文（源语言）</string>
+    <string name="latest_only">只显示最新实时字幕（不保留历史）</string>
     <string name="save">保存</string>
     <string name="cancel">取消</string>
 

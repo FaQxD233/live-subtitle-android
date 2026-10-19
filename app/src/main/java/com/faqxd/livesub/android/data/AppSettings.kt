@@ -25,6 +25,8 @@ import androidx.core.content.edit
  *                          already in the target language (API field).
  *  - playbackVolume      — 0..1 playback volume.
  *  - showOriginal        — Whether to display the source-language transcript.
+ *  - showLatestOnly      — Whether the overlay shows only the newest caption
+ *                          (current sentence) instead of the full history.
  *  - liveModel           — Gemini Live model override.
  *  - liveDirection       — "a2b" means Chinese→target language; "b2a"
  *                          means target language→Simplified Chinese.
@@ -40,6 +42,7 @@ data class AppSettings(
     var echoTargetLanguage: Boolean = false,
     var playbackVolume: Float = 0.8f,
     var showOriginal: Boolean = false,
+    var showLatestOnly: Boolean = false,
     var liveModel: String = DEFAULT_LIVE_MODEL,
     var liveDirection: String = "a2b",
 ) {
@@ -132,6 +135,7 @@ data class AppSettings(
                 echoTargetLanguage = prefs.getBoolean("echo_same_language", false),
                 playbackVolume = prefs.getFloat("playback_volume", 0.8f),
                 showOriginal = prefs.getBoolean("show_original", false),
+                showLatestOnly = prefs.getBoolean("latest_only", false),
                 liveModel = liveModel,
                 liveDirection = normalizeDirection(rawDirection),
             )
@@ -183,6 +187,7 @@ data class AppSettings(
             putBoolean("echo_same_language", echoTargetLanguage)
             putFloat("playback_volume", playbackVolume)
             putBoolean("show_original", showOriginal)
+            putBoolean("latest_only", showLatestOnly)
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
             putString("live_direction", normalizeDirection(liveDirection))
             putString("mode", "live")

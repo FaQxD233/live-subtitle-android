@@ -216,6 +216,15 @@
                 android:text="@string/show_original"
                 android:textColor="@color/text_primary_light"
                 android:textSize="13sp" />
+
+            <CheckBox
+                android:id="@+id/latestOnlyCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/latest_only"
+                android:textColor="@color/text_primary_light"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <!-- ADVANCED -->

@@ -42,6 +42,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var fontSlider: SeekBar
     private lateinit var opacitySlider: SeekBar
     private lateinit var showOriginalCheck: CheckBox
+    private lateinit var latestOnlyCheck: CheckBox
     private lateinit var modelLabel: TextView
     private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
@@ -69,6 +70,7 @@ class SettingsActivity : AppCompatActivity() {
         fontSlider = findViewById(R.id.fontSlider)
         opacitySlider = findViewById(R.id.opacitySlider)
         showOriginalCheck = findViewById(R.id.showOriginalCheck)
+        latestOnlyCheck = findViewById(R.id.latestOnlyCheck)
         modelLabel = findViewById(R.id.modelLabel)
         modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
@@ -191,6 +193,7 @@ class SettingsActivity : AppCompatActivity() {
         fontSlider.progress = (settings.fontSize - 14).coerceIn(0, 46)
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
         showOriginalCheck.isChecked = settings.showOriginal
+        latestOnlyCheck.isChecked = settings.showLatestOnly
         modelEdit.setText(settings.liveModel)
         modelLabel.text = "Live Model"
     }
@@ -208,6 +211,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.fontSize = (fontSlider.progress + 14).coerceIn(14, 60)
         settings.bgOpacity = opacitySlider.progress / 100f
         settings.showOriginal = showOriginalCheck.isChecked
+        settings.showLatestOnly = latestOnlyCheck.isChecked
         settings.liveModel = modelEdit.text.toString().trim()
             .ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
     }
