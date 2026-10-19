@@ -21,6 +21,13 @@ object TranscriptExporter {
 
     private const val EXPORT_DIR = "exports"
 
+    /**
+     * How long an exported file is kept. Share targets read the file
+     * asynchronously long after the chooser is dismissed, so deleting
+     * younger files would break an in-flight share; only prune old ones.
+     */
+    private const val EXPORT_RETENTION_MS = 60 * 60 * 1000L
+
     /** Render [lines] as the exported text, with a small header. */
     fun format(
         context: Context,
@@ -62,8 +69,12 @@ object TranscriptExporter {
     suspend fun share(context: Context, text: String, exportedAt: Long) {
         val file = withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, EXPORT_DIR).apply { mkdirs() }
-            // Earlier exports were already handed off; don't let them pile up.
-            dir.listFiles()?.forEach { it.delete() }
+            // Prune exports older than the retention window. A previous
+            // export may still be queued for reading by a share target
+            // (cloud drives and chat apps read asynchronously), so its
+            // file must survive until then.
+            val cutoff = System.currentTimeMillis() - EXPORT_RETENTION_MS
+            dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
             File(dir, fileName(exportedAt)).apply { writeText(text) }
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
