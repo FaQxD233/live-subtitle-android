@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.service.LiveTranslateService
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 
 /**
  * Port of `settings_window.py:SettingsDialog`.
@@ -27,10 +28,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var settings: AppSettings
 
+    /** Language picked in the picker but not yet saved; null = unchanged. */
+    private var pickedLanguage: String? = null
+
     private lateinit var apiKeyEdit: EditText
     private lateinit var showKeyBtn: Button
     private lateinit var apiBaseEdit: EditText
-    private lateinit var langSpinner: Spinner
+    private lateinit var langPicker: MaterialAutoCompleteTextView
     private lateinit var sourceSpinner: Spinner
     private lateinit var volumeSlider: SeekBar
     private lateinit var echoCheck: CheckBox
@@ -57,7 +61,7 @@ class SettingsActivity : AppCompatActivity() {
         apiKeyEdit = findViewById(R.id.apiKeyEdit)
         showKeyBtn = findViewById(R.id.showKeyBtn)
         apiBaseEdit = findViewById(R.id.apiBaseEdit)
-        langSpinner = findViewById(R.id.langSpinner)
+        langPicker = findViewById(R.id.langPicker)
         sourceSpinner = findViewById(R.id.sourceSpinner)
         volumeSlider = findViewById(R.id.volumeSlider)
         echoCheck = findViewById(R.id.echoCheck)
@@ -149,11 +153,21 @@ class SettingsActivity : AppCompatActivity() {
         apiBaseEdit.setText(settings.apiBase)
         if (apiBaseEdit.text.isBlank()) apiBaseEdit.hint = AppSettings.DEFAULT_API_BASE
 
-        langSpinner.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item,
-            Languages.ALL.map { it.name }
+        // Searchable language picker: typing filters by name or code; the
+        // code is embedded in each row so "pt-BR" finds Portuguese (Brazil).
+        val langDisplay = Languages.ALL.map { "${it.name}  (${it.code})" }
+        langPicker.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, langDisplay)
         )
-        langSpinner.setSelection(Languages.ALL.indexOfFirst { it.code == settings.targetLanguage }.coerceAtLeast(0))
+        langPicker.setText(Languages.nameFor(settings.targetLanguage), false)
+        langPicker.setOnItemClickListener { _, _, position, _ ->
+            val item = langPicker.adapter.getItem(position) as? String ?: return@setOnItemClickListener
+            val code = item.substringAfterLast('(').removeSuffix(")").trim()
+            if (Languages.ALL.any { it.code == code }) {
+                pickedLanguage = code
+                langPicker.setText(Languages.nameFor(code), false)
+            }
+        }
 
         // Loopback capture exists only on Android 10+; don't offer it on
         // older systems (AppSettings also normalizes a stale "system").
@@ -184,10 +198,9 @@ class SettingsActivity : AppCompatActivity() {
     private fun applyFromUi() {
         settings.apiKey = apiKeyEdit.text.toString().trim()
         settings.apiBase = apiBaseEdit.text.toString().trim().ifBlank { AppSettings.DEFAULT_API_BASE }
-        val langIdx = langSpinner.selectedItemPosition
-        if (langIdx in Languages.ALL.indices) {
-            settings.targetLanguage = Languages.ALL[langIdx].code
-        }
+        // targetLanguage only changes when a picker row was selected;
+        // free-typed text that matches nothing is ignored.
+        pickedLanguage?.let { settings.targetLanguage = it }
         settings.audioSource = if (sourceSpinner.selectedItemPosition == 1) "system" else "mic"
         settings.playbackVolume = volumeSlider.progress / 100f
         settings.playTranslation = echoCheck.isChecked

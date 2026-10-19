@@ -159,7 +159,11 @@ data class AppSettings(
 
         fun normalizeTargetLanguage(raw: String): String =
             when (raw.trim()) {
+                // Simplified Chinese keeps the legacy app code (documented
+                // spelling zh-Hans maps onto it); bare "pt" predates the
+                // official split into pt-BR / pt-PT.
                 "zh", "zh-Hans" -> "zh-CN"
+                "pt" -> "pt-BR"
                 else -> raw.trim().ifBlank { "zh-CN" }
             }
 
