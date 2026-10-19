@@ -36,6 +36,9 @@
     <string name="overlay_expand">Expand</string>
     <string name="overlay_original">Orig</string>
     <string name="overlay_original_desc">Show original transcript</string>
+    <string name="overlay_click_through">Click-through</string>
+    <string name="overlay_click_through_off">Exit click-through</string>
+    <string name="overlay_click_through_hint">Click-through is on: touches now reach the app below. Tap the unlock button or the notification action to exit.</string>
 
     <!-- Settings -->
     <string name="section_connection">CONNECTION</string>

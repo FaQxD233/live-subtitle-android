@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.faqxd.livesub.android.MainActivity
 import com.faqxd.livesub.android.R
@@ -115,6 +116,7 @@ class LiveTranslateService : Service() {
             ACTION_STOP -> shutdown()
             ACTION_TOGGLE -> togglePipeline()
             ACTION_RESTART -> restartPipelineIfNeeded()
+            ACTION_EXIT_CLICK_THROUGH -> overlay?.setClickThrough(false)
         }
         // START_NOT_STICKY: the service needs RECORD_AUDIO + (optional)
         // MediaProjection consent that we cannot re-acquire after the
@@ -461,6 +463,17 @@ class LiveTranslateService : Service() {
                     override fun onToggleOriginalClicked() {
                         toggleShowOriginal()
                     }
+                    override fun onClickThroughChanged(enabled: Boolean) {
+                        // Re-post so the "exit click-through" action follows the mode.
+                        updateNotification(running)
+                        if (enabled) {
+                            Toast.makeText(
+                                this@LiveTranslateService,
+                                R.string.overlay_click_through_hint,
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }
                 },
             )
         }
@@ -687,7 +700,7 @@ class LiveTranslateService : Service() {
             Intent(this, LiveTranslateService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(
@@ -698,7 +711,16 @@ class LiveTranslateService : Service() {
             .setOngoing(true)
             .setPriority(priority)
             .addAction(0, getString(R.string.stop), stopIntent)
-            .build()
+        // Fallback exit from click-through, next to the on-screen unlock button.
+        if (overlay?.isClickThrough == true) {
+            val exitClickThroughIntent = PendingIntent.getService(
+                this, 2,
+                Intent(this, LiveTranslateService::class.java).setAction(ACTION_EXIT_CLICK_THROUGH),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.addAction(0, getString(R.string.overlay_click_through_off), exitClickThroughIntent)
+        }
+        return builder.build()
     }
 
     private fun notifyStatus(text: String) {
@@ -727,6 +749,7 @@ class LiveTranslateService : Service() {
         const val ACTION_STOP = "com.faqxd.livesub.android.STOP"
         const val ACTION_TOGGLE = "com.faqxd.livesub.android.TOGGLE"
         const val ACTION_RESTART = "com.faqxd.livesub.android.RESTART"
+        const val ACTION_EXIT_CLICK_THROUGH = "com.faqxd.livesub.android.EXIT_CLICK_THROUGH"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
 

@@ -1,8 +1,10 @@
 package com.faqxd.livesub.android.service
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.PixelFormat
 import android.os.Build
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -33,9 +35,11 @@ import kotlin.math.abs
  *  - Shows: status dot + text, target-language badge, close button,
  *    translated output (primary, scrollable, **bold**), original input
  *    (secondary, scrollable, italic), control bar (Toggle / Clear /
- *    Original / Settings).
+ *    Original / Click-through / Settings).
  *  - Can collapse into a small draggable pill ([setMinimized]); captions
  *    keep updating in the background and show up again when expanded.
+ *  - Can let touches pass through to the app underneath
+ *    ([setClickThrough]); a small unlock button stays tappable.
  *
  * All public methods must be called on the main thread.
  */
@@ -54,6 +58,8 @@ class CaptionOverlayView(
         fun onToggleDirectionClicked()
         /** Fired when the user taps the original-transcript toggle. */
         fun onToggleOriginalClicked()
+        /** Fired after click-through mode was switched on or off. */
+        fun onClickThroughChanged(enabled: Boolean)
     }
 
     // ---- Caption text state (mirrors HUDWindow._out_committed / _out_draft) ----
@@ -73,6 +79,13 @@ class CaptionOverlayView(
     private var expandedWidth = 0
     private var expandedHeight = 0
 
+    // ---- Click-through state ----
+    /** True while touches pass through the HUD to the app below. */
+    var isClickThrough = false
+        private set
+    // Separate small window over the lock button that turns the mode off.
+    private var unlockButton: View? = null
+
     // ---- View references ----
     private lateinit var rootView: View
     private lateinit var overlayRoot: View
@@ -90,6 +103,7 @@ class CaptionOverlayView(
     private lateinit var toggleBtn: Button
     private lateinit var clearBtn: Button
     private lateinit var originalBtn: Button
+    private lateinit var clickThroughBtn: ImageButton
     private lateinit var settingsBtn: ImageButton
     private lateinit var directionBtn: Button
     private lateinit var resizeTL: ImageView
@@ -137,6 +151,7 @@ class CaptionOverlayView(
         toggleBtn = rootView.findViewById(R.id.overlayToggleBtn)
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
         originalBtn = rootView.findViewById(R.id.overlayOriginalBtn)
+        clickThroughBtn = rootView.findViewById(R.id.overlayClickThroughBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
         directionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
         resizeTL = rootView.findViewById(R.id.overlayResizeTL)
@@ -150,6 +165,7 @@ class CaptionOverlayView(
         toggleBtn.setOnClickListener { callbacks.onToggleClicked() }
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
         originalBtn.setOnClickListener { callbacks.onToggleOriginalClicked() }
+        clickThroughBtn.setOnClickListener { setClickThrough(true) }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
         directionBtn.setOnClickListener {
@@ -179,6 +195,7 @@ class CaptionOverlayView(
     }
 
     fun detach() {
+        removeUnlockButton()
         if (!attached) return
         try {
             windowManager.removeView(rootView)
@@ -321,6 +338,32 @@ class CaptionOverlayView(
         }
     }
 
+    /**
+     * Let touches pass through the HUD to the app underneath (or stop).
+     *
+     * Android 12+ blocks touches that pass through an app overlay unless the
+     * window's opacity is at most [CLICK_THROUGH_WINDOW_ALPHA], so the whole
+     * window is dimmed slightly while the mode is on. The HUD itself can't
+     * be touched then, so a separate small unlock button is placed over the
+     * lock button to switch back.
+     */
+    fun setClickThrough(enabled: Boolean) {
+        if (!attached || enabled == isClickThrough) return
+        isClickThrough = enabled
+        val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        if (enabled) {
+            layoutParams.flags = layoutParams.flags or notTouchable
+            layoutParams.alpha = CLICK_THROUGH_WINDOW_ALPHA
+            showUnlockButton()
+        } else {
+            layoutParams.flags = layoutParams.flags and notTouchable.inv()
+            layoutParams.alpha = 1f
+            removeUnlockButton()
+        }
+        updateWindowLayout()
+        callbacks.onClickThroughChanged(enabled)
+    }
+
     private fun updateDirectionUi(s: AppSettings) {
         val target = s.normalizedTargetLanguage
         langBadge.text = if (target == AppSettings.SIMPLIFIED_CHINESE) {
@@ -434,20 +477,70 @@ class CaptionOverlayView(
         layoutParams.y = layoutParams.y.coerceIn(0, maxY)
     }
 
-    private fun buildLayoutParams(): WindowManager.LayoutParams {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    /**
+     * Show the unlock button exactly where the lock button is. It is its own
+     * (touchable) window, positioned in the same coordinate space as the
+     * HUD, so it lines up while the non-touchable HUD can't move.
+     */
+    private fun showUnlockButton() {
+        val location = IntArray(2)
+        clickThroughBtn.getLocationInWindow(location)
+        val padding = (6 * density).toInt()
+        val button = ImageButton(context).apply {
+            setImageResource(R.drawable.ic_overlay_unlock)
+            imageTintList = ColorStateList.valueOf(context.getColor(R.color.hud_text_primary))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundResource(R.drawable.overlay_btn_primary)
+            setPadding(padding, padding, padding, padding)
+            contentDescription = context.getString(R.string.overlay_click_through_off)
+            setOnClickListener { setClickThrough(false) }
+        }
+        val params = WindowManager.LayoutParams(
+            clickThroughBtn.width,
+            clickThroughBtn.height,
+            overlayWindowType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = layoutParams.x + location[0]
+            y = layoutParams.y + location[1]
+        }
+        try {
+            windowManager.addView(button, params)
+            unlockButton = button
+        } catch (e: Exception) {
+            // The notification action still offers a way out.
+            Log.w(TAG, "unlock button attach failed: ${e.message}")
+        }
+    }
+
+    private fun removeUnlockButton() {
+        unlockButton?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (_: Exception) {}
+        }
+        unlockButton = null
+    }
+
+    private fun overlayWindowType(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
+
+    private fun buildLayoutParams(): WindowManager.LayoutParams {
         // Fixed initial dimensions (360dp x 320dp) so the overlay can be resized.
         val widthPx = (360 * density).toInt()
         val heightPx = (320 * density).toInt()
         return WindowManager.LayoutParams(
             widthPx,
             heightPx,
-            type,
+            overlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
@@ -600,6 +693,13 @@ class CaptionOverlayView(
     }
 
     companion object {
+        private const val TAG = "CaptionOverlay"
         private const val MAX_STATUS_CHARS = 80
+        /**
+         * Highest window opacity for which Android 12+ still lets touches
+         * pass through an app overlay (the platform default maximum
+         * obscuring opacity for touches).
+         */
+        private const val CLICK_THROUGH_WINDOW_ALPHA = 0.8f
     }
 }

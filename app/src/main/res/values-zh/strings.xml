@@ -37,6 +37,9 @@
     <string name="overlay_expand">展开</string>
     <string name="overlay_original">原文</string>
     <string name="overlay_original_desc">显示原文</string>
+    <string name="overlay_click_through">点击穿透</string>
+    <string name="overlay_click_through_off">退出点击穿透</string>
+    <string name="overlay_click_through_hint">已开启点击穿透，触摸会传到下层应用。点解锁按钮或通知栏里的按钮退出。</string>
 
     <!-- Settings -->
     <string name="section_connection">连接设置</string>
