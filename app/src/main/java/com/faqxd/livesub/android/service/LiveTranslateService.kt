@@ -146,6 +146,7 @@ class LiveTranslateService : Service() {
      * a temp file rename so a crash never truncates the good file.
      */
     private fun persistTranscript(lines: List<TranscriptRecorder.Line>, startedAt: Long) {
+        if (transcriptPersistExecutor.isShutdown) return
         transcriptPersistExecutor.execute {
             try {
                 val arr = org.json.JSONArray()
@@ -160,9 +161,11 @@ class LiveTranslateService : Service() {
                 }
                 val tmp = File(filesDir, "transcript.json.tmp")
                 tmp.writeText(arr.toString())
-                if (!tmp.renameTo(transcriptFile)) {
-                    tmp.delete()
-                }
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    transcriptFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
             } catch (e: Exception) {
                 Log.w(TAG, "transcript persist failed: ${e.message}")
             }
@@ -665,6 +668,8 @@ class LiveTranslateService : Service() {
                     }
                     override fun onClearClicked() {
                         overlay?.clear()
+                        // Mirror the emptied captions to the main screen.
+                        publishState()
                     }
                     override fun onSettingsClicked() {
                         startActivity(
