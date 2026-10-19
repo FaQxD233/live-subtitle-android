@@ -403,7 +403,7 @@ class CaptionOverlayView(
             joinLatest(lastOutFinalized, outMerger.draft)
         } else {
             (outCommitted + outMerger.draft).trim()
-        }.let { if (it.isEmpty()) it else it.take(MAX_OUTPUT_CHARS) }
+        }.let { if (it.isEmpty()) it else capHistory(it, MAX_OUTPUT_CHARS) }
         val display = text.ifEmpty {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -425,7 +425,7 @@ class CaptionOverlayView(
             joinLatest(lastInFinalized, inMerger.draft)
         } else {
             (inCommitted + inMerger.draft).trim()
-        }.let { if (it.isEmpty()) it else it.take(MAX_INPUT_CHARS) }
+        }.let { if (it.isEmpty()) it else capHistory(it, MAX_INPUT_CHARS) }
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
