@@ -51,6 +51,18 @@
             android:exported="false"
             android:foregroundServiceType="microphone|mediaProjection" />
 
+        <!-- Quick Settings tile: start / stop the translation pipeline. -->
+        <service
+            android:name=".service.LiveTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/notif_title"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Shares exported caption transcripts with other apps. -->
         <provider
             android:name="androidx.core.content.FileProvider"

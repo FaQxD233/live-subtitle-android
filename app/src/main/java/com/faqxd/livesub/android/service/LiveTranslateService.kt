@@ -463,6 +463,7 @@ class LiveTranslateService : Service() {
         overlay?.setRunningState(true)
         setOverlayStatus(getString(R.string.status_connecting), StatusKind.CONNECTING)
         updateNotification(running = true)
+        LiveTileService.requestUpdate(this)
 
         try {
             c.start()
@@ -538,6 +539,7 @@ class LiveTranslateService : Service() {
         setOverlayStatus(status, StatusKind.ERROR)
         updateNotification(running = false)
         notifyStatus(status)
+        LiveTileService.requestUpdate(this)
     }
 
     private fun stopPipeline() {
@@ -569,6 +571,7 @@ class LiveTranslateService : Service() {
         overlay?.setRunningState(false)
         setOverlayStatus(getString(R.string.status_stopped), StatusKind.IDLE)
         updateNotification(running = false)
+        LiveTileService.requestUpdate(this)
     }
 
     /**
@@ -883,6 +886,7 @@ class LiveTranslateService : Service() {
                         // stop for good instead of hammering the API.
                         failPipeline(status)
                     }
+                    LiveTileService.requestUpdate(applicationContext)
                 } else {
                     setOverlayStatus(status, StatusKind.ERROR)
                 }
