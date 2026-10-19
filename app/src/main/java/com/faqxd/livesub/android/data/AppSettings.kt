@@ -45,6 +45,11 @@ data class AppSettings(
     var showLatestOnly: Boolean = false,
     var liveModel: String = DEFAULT_LIVE_MODEL,
     var liveDirection: String = "a2b",
+    // Persisted overlay geometry in WindowManager px; MIN_VALUE = unset.
+    var overlayX: Int = Int.MIN_VALUE,
+    var overlayY: Int = Int.MIN_VALUE,
+    var overlayWidth: Int = Int.MIN_VALUE,
+    var overlayHeight: Int = Int.MIN_VALUE,
 ) {
     val normalizedTargetLanguage: String
         get() = normalizeTargetLanguage(targetLanguage)
@@ -138,6 +143,10 @@ data class AppSettings(
                 showLatestOnly = prefs.getBoolean("latest_only", false),
                 liveModel = liveModel,
                 liveDirection = normalizeDirection(rawDirection),
+                overlayX = prefs.getInt("overlay_x", Int.MIN_VALUE),
+                overlayY = prefs.getInt("overlay_y", Int.MIN_VALUE),
+                overlayWidth = prefs.getInt("overlay_width", Int.MIN_VALUE),
+                overlayHeight = prefs.getInt("overlay_height", Int.MIN_VALUE),
             )
         }
 
@@ -173,6 +182,20 @@ data class AppSettings(
 
         fun normalizeDirection(raw: String): String =
             if (raw == "b2a") "b2a" else "a2b"
+
+        /**
+         * Persist only the overlay geometry keys. The overlay holds its own
+         * settings snapshot which may lag behind unrelated changes, so it
+         * must not write the whole [AppSettings] back.
+         */
+        fun saveOverlayGeometry(context: Context, x: Int, y: Int, width: Int, height: Int) {
+            prefs(context).edit {
+                putInt("overlay_x", x)
+                putInt("overlay_y", y)
+                putInt("overlay_width", width)
+                putInt("overlay_height", height)
+            }
+        }
     }
 
     fun save(context: Context) {
@@ -190,6 +213,10 @@ data class AppSettings(
             putBoolean("latest_only", showLatestOnly)
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
             putString("live_direction", normalizeDirection(liveDirection))
+            putInt("overlay_x", overlayX)
+            putInt("overlay_y", overlayY)
+            putInt("overlay_width", overlayWidth)
+            putInt("overlay_height", overlayHeight)
             putString("mode", "live")
             remove("bili_model")
             remove("bili_direction")

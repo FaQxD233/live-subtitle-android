@@ -199,6 +199,8 @@ class CaptionOverlayView(
     fun attach() {
         if (!initialized) init()
         if (attached) return
+        // Clamp the (possibly restored) geometry into the current screen.
+        keepOnScreen()
         try {
             windowManager.addView(rootView, layoutParams)
             attached = true
@@ -329,6 +331,8 @@ class CaptionOverlayView(
         if (!initialized || minimized == isMinimized) return
         isMinimized = minimized
         if (minimized) {
+            // Persist the expanded geometry before collapsing into the pill.
+            persistGeometry()
             expandedWidth = layoutParams.width
             expandedHeight = layoutParams.height
             layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -337,6 +341,7 @@ class CaptionOverlayView(
             layoutParams.width = expandedWidth
             layoutParams.height = expandedHeight
             keepOnScreen()
+            persistGeometry()
         }
         val cardVisibility = if (minimized) View.GONE else View.VISIBLE
         overlayRoot.visibility = cardVisibility
@@ -457,9 +462,12 @@ class CaptionOverlayView(
         } catch (_: Exception) {}
     }
 
-    /** Clamp the window position so the whole card stays on screen. */
+    /** Clamp the window position and size so the whole card stays on screen
+     * (also covers a restored geometry after rotation / resolution change). */
     private fun keepOnScreen() {
         val metrics = context.resources.displayMetrics
+        layoutParams.width = layoutParams.width.coerceAtMost(metrics.widthPixels)
+        layoutParams.height = layoutParams.height.coerceAtMost(metrics.heightPixels)
         val maxX = (metrics.widthPixels - layoutParams.width).coerceAtLeast(0)
         val maxY = (metrics.heightPixels - layoutParams.height).coerceAtLeast(0)
         layoutParams.x = layoutParams.x.coerceIn(0, maxX)
@@ -523,9 +531,18 @@ class CaptionOverlayView(
         }
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
-        // Fixed initial dimensions (360dp x 320dp) so the overlay can be resized.
-        val widthPx = (360 * density).toInt()
-        val heightPx = (320 * density).toInt()
+        // Restore persisted geometry when valid, else the 360x320 default
+        // (large enough for the control bar and initial resizing).
+        val widthPx = if (settings.overlayWidth >= minWidthPx) {
+            settings.overlayWidth
+        } else {
+            (360 * density).toInt()
+        }
+        val heightPx = if (settings.overlayHeight >= minHeightPx) {
+            settings.overlayHeight
+        } else {
+            (320 * density).toInt()
+        }
         return WindowManager.LayoutParams(
             widthPx,
             heightPx,
@@ -536,8 +553,8 @@ class CaptionOverlayView(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 40
-            y = 200
+            x = if (settings.overlayX != Int.MIN_VALUE) settings.overlayX else 40
+            y = if (settings.overlayY != Int.MIN_VALUE) settings.overlayY else 200
         }
     }
 
@@ -597,11 +614,20 @@ class CaptionOverlayView(
                 }
                 MotionEvent.ACTION_UP -> {
                     if (clickOnTap && !dragging) view.performClick()
+                    if (dragging) persistGeometry()
                     true
                 }
                 else -> false
             }
         }
+    }
+
+    /** Write the current window geometry to prefs (drag/resize end). */
+    private fun persistGeometry() {
+        AppSettings.saveOverlayGeometry(
+            context, layoutParams.x, layoutParams.y,
+            layoutParams.width, layoutParams.height,
+        )
     }
 
     /**
@@ -675,7 +701,14 @@ class CaptionOverlayView(
                     updateWindowLayout()
                     true
                 }
-                MotionEvent.ACTION_UP -> true
+                MotionEvent.ACTION_UP -> {
+                    if (layoutParams.width != initW || layoutParams.height != initH ||
+                        layoutParams.x != initX || layoutParams.y != initY
+                    ) {
+                        persistGeometry()
+                    }
+                    true
+                }
                 else -> false
             }
         }
