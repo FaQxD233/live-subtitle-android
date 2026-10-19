@@ -1,5 +1,6 @@
 package com.faqxd.livesub.android
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,7 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.Filter
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -190,47 +192,20 @@ class SettingsActivity : AppCompatActivity() {
         // code — the code is embedded in each row so "pt-BR" finds
         // Portuguese (Brazil).
         val langDisplay = Languages.ALL.map { "${it.name}  (${it.code})" }
-        val langAdapter = object : ArrayAdapter<String>(
-            this, android.R.layout.simple_dropdown_item_1line, ArrayList(langDisplay)
-        ) {
-            override fun getFilter() = object : android.widget.Filter() {
-                override fun performFiltering(constraint: CharSequence?): FilterResults {
-                    val query = constraint?.toString()?.trim()?.lowercase().orEmpty()
-                    val matches = if (query.isEmpty()) {
-                        langDisplay
-                    } else {
-                        langDisplay.filter { it.lowercase().contains(query) }
-                    }
-                    return FilterResults().apply { values = matches; count = matches.size }
-                }
-                @Suppress("UNCHECKED_CAST")
-                override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
-                    val matches = results?.values as? List<String> ?: return
-                    setNotifyOnChange(false)
-                    clear()
-                    addAll(matches)
-                    notifyDataSetChanged()
-                }
-            }
-        }
+        val langAdapter = LanguageAdapter(this, langDisplay)
         langPicker.setAdapter(langAdapter)
         langPicker.setText(Languages.nameFor(settings.targetLanguage), false)
         // Tap = open the full list; free typing filters as usual. The first
         // tap on an unfocused editable only grants focus (and opens the
         // IME) without firing onClick, so focus opens the list as well.
+        val showFullList = android.widget.Filter.FilterListener { _ ->
+            langPicker.showDropDown()
+        }
         langPicker.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                langPicker.filter.filter(
-                    "",
-                    android.widget.Filter.FilterListener { _ -> langPicker.showDropDown() },
-                )
-            }
+            if (hasFocus) langAdapter.filter.filter("", showFullList)
         }
         langPicker.setOnClickListener {
-            langPicker.filter.filter(
-                "",
-                android.widget.Filter.FilterListener { _ -> langPicker.showDropDown() },
-            )
+            langAdapter.filter.filter("", showFullList)
         }
         // Leaving without picking restores the current selection label.
         langPicker.setOnDismissListener {
@@ -293,5 +268,37 @@ class SettingsActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
+    }
+
+    /**
+     * Dropdown model for the language picker: an empty query lists every
+     * language; a non-empty one filters by name or code (case-insensitive).
+     */
+    private class LanguageAdapter(
+        context: Context,
+        private val items: List<String>,
+    ) : ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line) {
+
+        private val filter = object : Filter() {
+            override fun performFiltering(constraint: CharSequence?): FilterResults {
+                val query = constraint?.toString()?.trim()?.lowercase().orEmpty()
+                val matches = if (query.isEmpty()) {
+                    items
+                } else {
+                    items.filter { it.lowercase().contains(query) }
+                }
+                return FilterResults().apply { values = matches; count = matches.size }
+            }
+            override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
+                @Suppress("UNCHECKED_CAST")
+                val matches = results?.values as? List<String> ?: emptyList()
+                setNotifyOnChange(false)
+                clear()
+                addAll(matches)
+                notifyDataSetChanged()
+            }
+        }
+
+        override fun getFilter(): Filter = filter
     }
 }
