@@ -58,14 +58,12 @@ class GeminiClient(
     private var apiKey: String = ""
     private var apiBase: String = DEFAULT_API_BASE
     private var targetLang: String = "es"
-    private var systemPrompt: String = ""
     private var echo: Boolean = true
     private var liveModel: String = AppSettings.DEFAULT_LIVE_MODEL
 
     fun configure(
         apiKey: String,
         targetLang: String,
-        systemPrompt: String,
         echoTargetLanguage: Boolean,
         apiBase: String = DEFAULT_API_BASE,
         liveModel: String = AppSettings.DEFAULT_LIVE_MODEL,
@@ -73,7 +71,6 @@ class GeminiClient(
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
         this.targetLang = AppSettings.normalizeTargetLanguage(targetLang)
-        this.systemPrompt = systemPrompt
         this.echo = echoTargetLanguage
         this.liveModel = liveModel.trim().ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
     }
@@ -204,9 +201,10 @@ class GeminiClient(
 
     /**
      * Live translate setup with a fixed `translationConfig.targetLanguageCode`.
-     * The user's custom `systemPrompt` is forwarded as `systemInstruction`
-     * if non-empty. `responseModalities = ["AUDIO"]` so the model can echo
-     * the translated speech back when `echoTargetLanguage` is true.
+     * The translate model accepts audio input only — no tools and no
+     * `systemInstruction` — so none are sent. `responseModalities =
+     * ["AUDIO"]` so the model can echo the translated speech back when
+     * `echoTargetLanguage` is true.
      */
     private fun buildLiveSetup(): JSONObject = JSONObject().apply {
         put("model", modelResourceName(liveModel))
@@ -223,12 +221,6 @@ class GeminiClient(
             put("triggerTokens", "0")
             put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
         })
-        val instruction = systemPrompt.trim()
-        if (instruction.isNotEmpty()) {
-            put("systemInstruction", JSONObject().apply {
-                put("parts", JSONArray().apply { put(JSONObject().put("text", instruction)) })
-            })
-        }
     }
 
     private fun handleText(raw: String) {

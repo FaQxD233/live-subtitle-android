@@ -310,7 +310,6 @@ class LiveTranslateService : Service() {
         c.configure(
             apiKey = s.apiKey,
             targetLang = s.effectiveTargetLanguage,
-            systemPrompt = s.systemPrompt,
             echoTargetLanguage = s.echoTargetLanguage,
             apiBase = s.apiBase,
             liveModel = s.liveModel,

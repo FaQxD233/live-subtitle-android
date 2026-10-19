@@ -20,9 +20,9 @@ import androidx.core.content.edit
  *  - audioSource         — "mic" or "system" (loopback via MediaProjection).
  *  - fontSize            — Caption font size in sp.
  *  - bgOpacity           — 0..1 background alpha for the overlay card.
- *  - echoTargetLanguage  — Whether to play back the translated audio.
+ *  - echoTargetLanguage  — Whether the model also repeats input that is
+ *                          already in the target language (API field).
  *  - playbackVolume      — 0..1 playback volume.
- *  - systemPrompt        — Optional custom instructions for the model.
  *  - showOriginal        — Whether to display the source-language transcript.
  *  - liveModel           — Gemini Live model override.
  *  - liveDirection       — "a2b" means Chinese→target language; "b2a"
@@ -37,7 +37,6 @@ data class AppSettings(
     var bgOpacity: Float = 0.6f,
     var echoTargetLanguage: Boolean = false,
     var playbackVolume: Float = 0.8f,
-    var systemPrompt: String = "",
     var showOriginal: Boolean = false,
     var liveModel: String = DEFAULT_LIVE_MODEL,
     var liveDirection: String = "a2b",
@@ -126,7 +125,6 @@ data class AppSettings(
                 bgOpacity = prefs.getFloat("bg_opacity", 0.6f),
                 echoTargetLanguage = prefs.getBoolean("echo_target", false),
                 playbackVolume = prefs.getFloat("playback_volume", 0.8f),
-                systemPrompt = prefs.getString("system_prompt", "") ?: "",
                 showOriginal = prefs.getBoolean("show_original", false),
                 liveModel = liveModel,
                 liveDirection = normalizeDirection(rawDirection),
@@ -173,7 +171,6 @@ data class AppSettings(
             putFloat("bg_opacity", bgOpacity)
             putBoolean("echo_target", echoTargetLanguage)
             putFloat("playback_volume", playbackVolume)
-            putString("system_prompt", systemPrompt)
             putBoolean("show_original", showOriginal)
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
             putString("live_direction", normalizeDirection(liveDirection))

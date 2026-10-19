@@ -37,7 +37,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var fontSlider: SeekBar
     private lateinit var opacitySlider: SeekBar
     private lateinit var showOriginalCheck: CheckBox
-    private lateinit var promptEdit: EditText
     private lateinit var modelLabel: TextView
     private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
@@ -64,7 +63,6 @@ class SettingsActivity : AppCompatActivity() {
         fontSlider = findViewById(R.id.fontSlider)
         opacitySlider = findViewById(R.id.opacitySlider)
         showOriginalCheck = findViewById(R.id.showOriginalCheck)
-        promptEdit = findViewById(R.id.promptEdit)
         modelLabel = findViewById(R.id.modelLabel)
         modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
@@ -102,7 +100,6 @@ class SettingsActivity : AppCompatActivity() {
                 prev.targetLanguage != settings.targetLanguage ||
                 prev.audioSource != settings.audioSource ||
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
-                prev.systemPrompt != settings.systemPrompt ||
                 prev.liveModel != settings.liveModel ||
                 prev.liveDirection != settings.liveDirection
 
@@ -176,7 +173,6 @@ class SettingsActivity : AppCompatActivity() {
         fontSlider.progress = (settings.fontSize - 14).coerceIn(0, 46)
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
         showOriginalCheck.isChecked = settings.showOriginal
-        promptEdit.setText(settings.systemPrompt)
         modelEdit.setText(settings.liveModel)
         modelLabel.text = "Live Model"
     }
@@ -194,7 +190,6 @@ class SettingsActivity : AppCompatActivity() {
         settings.fontSize = (fontSlider.progress + 14).coerceIn(14, 60)
         settings.bgOpacity = opacitySlider.progress / 100f
         settings.showOriginal = showOriginalCheck.isChecked
-        settings.systemPrompt = promptEdit.text.toString().trim()
         settings.liveModel = modelEdit.text.toString().trim()
             .ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
     }

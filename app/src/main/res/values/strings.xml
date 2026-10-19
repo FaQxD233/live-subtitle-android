@@ -76,7 +76,6 @@
     <string name="font_size">Caption font size</string>
     <string name="bg_opacity">Background opacity</string>
     <string name="show_original">Show original (source) transcript</string>
-    <string name="system_prompt">System prompt</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
 
