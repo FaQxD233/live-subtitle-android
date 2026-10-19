@@ -16,7 +16,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.service.LiveTranslateService
+import com.faqxd.livesub.android.service.PipelineState
 import com.google.android.material.button.MaterialButton
 
 /**
@@ -120,6 +122,19 @@ class MainActivity : AppCompatActivity() {
         applySettingsToUi()
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Live pipeline state from the foreground service (status dot, text,
+        // current captions). Re-rendered immediately and on every publish.
+        PipelineState.setListener { snapshot -> renderPipelineState(snapshot) }
+        renderPipelineState(PipelineState.current())
+    }
+
+    override fun onStop() {
+        super.onStop()
+        PipelineState.setListener(null)
+    }
+
     override fun onResume() {
         super.onResume()
         // Refresh settings in case the user changed something in SettingsActivity.
@@ -143,6 +158,28 @@ class MainActivity : AppCompatActivity() {
         inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
         if (settings.apiKey.isBlank()) {
             showHint(getString(R.string.err_no_api_key))
+        }
+    }
+
+    /** Mirror the service-published pipeline snapshot into the status card. */
+    private fun renderPipelineState(s: PipelineState.Snapshot) {
+        val colorRes = when (s.kind) {
+            StatusKind.IDLE -> R.color.status_idle
+            StatusKind.CONNECTING -> R.color.status_connecting
+            StatusKind.CONNECTED -> R.color.status_connected
+            StatusKind.ERROR -> R.color.status_error
+        }
+        statusDot.background?.setTint(ContextCompat.getColor(this, colorRes))
+        statusText.text = s.status.ifEmpty { getString(R.string.status_idle) }
+        if (outputView.text.toString() != s.output) {
+            outputView.text = s.output.ifEmpty { "—" }
+        }
+        if (inputView.text.toString() != s.input) {
+            inputView.text = s.input
+        }
+        if (serviceRunning != s.running) {
+            serviceRunning = s.running
+            toggleBtn.text = getString(if (s.running) R.string.stop else R.string.start)
         }
     }
 

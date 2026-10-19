@@ -140,6 +140,10 @@ class CaptionOverlayView(
 
     val isAttached: Boolean get() = attached
 
+    /** Latest caption texts, for the main-screen status bridge. */
+    val currentOutput: String get() = if (initialized) outputView.text.toString() else ""
+    val currentInput: String get() = if (initialized) inputView.text.toString() else ""
+
     /** Inflate the layout (does not attach to WindowManager yet). */
     fun init() {
         if (initialized) return

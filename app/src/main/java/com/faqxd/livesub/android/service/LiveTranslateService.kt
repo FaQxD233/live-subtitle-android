@@ -140,6 +140,34 @@ class LiveTranslateService : Service() {
         player?.setVolume(s.playbackVolume)
     }
 
+    // ---------- main-screen state bridge ----------
+
+    // Last status shown on the overlay; republished to [PipelineState]
+    // together with the captions whenever anything changes.
+    private var lastStateStatus = ""
+    private var lastStateKind: StatusKind = StatusKind.IDLE
+
+    /** Show a status on the overlay and mirror it to the main screen. */
+    private fun setOverlayStatus(text: String, kind: StatusKind) {
+        overlay?.setStatus(text, kind)
+        lastStateStatus = text
+        lastStateKind = kind
+        publishState()
+    }
+
+    /** Push the current pipeline snapshot to the main screen. */
+    private fun publishState() {
+        PipelineState.publish(
+            PipelineState.Snapshot(
+                running = running,
+                kind = lastStateKind,
+                status = lastStateStatus,
+                input = overlay?.currentInput ?: "",
+                output = overlay?.currentOutput ?: "",
+            )
+        )
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -281,7 +309,7 @@ class LiveTranslateService : Service() {
         if (s.audioSource == "system" && resultData == null) {
             val status = getString(R.string.status_system_audio_permission)
             overlay?.setRunningState(false)
-            overlay?.setStatus(status, StatusKind.ERROR)
+            setOverlayStatus(status, StatusKind.ERROR)
             updateNotification(running = false)
             notifyStatus(status)
             return
@@ -318,7 +346,7 @@ class LiveTranslateService : Service() {
         running = true
         pipelineRunning = true
         overlay?.setRunningState(true)
-        overlay?.setStatus(getString(R.string.status_connecting), StatusKind.CONNECTING)
+        setOverlayStatus(getString(R.string.status_connecting), StatusKind.CONNECTING)
         updateNotification(running = true)
 
         try {
@@ -391,7 +419,7 @@ class LiveTranslateService : Service() {
         client = null
         if (teardownProjectionGrant) teardownProjection()
         overlay?.setRunningState(false)
-        overlay?.setStatus(status, StatusKind.ERROR)
+        setOverlayStatus(status, StatusKind.ERROR)
         updateNotification(running = false)
         notifyStatus(status)
     }
@@ -422,7 +450,7 @@ class LiveTranslateService : Service() {
         client?.stop()
         client = null
         overlay?.setRunningState(false)
-        overlay?.setStatus(getString(R.string.status_stopped), StatusKind.IDLE)
+        setOverlayStatus(getString(R.string.status_stopped), StatusKind.IDLE)
         updateNotification(running = false)
     }
 
@@ -630,6 +658,7 @@ class LiveTranslateService : Service() {
                 if (isCurrentSession(sessionId)) {
                     overlay?.setInput(text)
                     transcript.append(TranscriptRecorder.Stream.ORIGINAL, text)
+                    publishState()
                 }
             }
         }
@@ -638,6 +667,7 @@ class LiveTranslateService : Service() {
                 if (isCurrentSession(sessionId)) {
                     overlay?.setOutput(text)
                     transcript.append(TranscriptRecorder.Stream.TRANSLATION, text)
+                    publishState()
                 }
             }
         }
@@ -649,7 +679,7 @@ class LiveTranslateService : Service() {
         override fun onSetupSent() {
             scope.launch {
                 if (isCurrentSession(sessionId)) {
-                    overlay?.setStatus(
+                    setOverlayStatus(
                         getString(R.string.status_session_setup),
                         StatusKind.CONNECTING,
                     )
@@ -663,7 +693,7 @@ class LiveTranslateService : Service() {
                 // counter is reset on disconnect only if the session lasted
                 // long enough (see onDisconnected).
                 connectedAtMs = SystemClock.elapsedRealtime()
-                overlay?.setStatus(getString(R.string.status_connected), StatusKind.CONNECTED)
+                setOverlayStatus(getString(R.string.status_connected), StatusKind.CONNECTED)
                 startCaptureForSession(sessionId)
                 if (isCurrentSession(sessionId) && running) {
                     updateNotification(running = true)
@@ -702,7 +732,7 @@ class LiveTranslateService : Service() {
                         failPipeline(status)
                     }
                 } else {
-                    overlay?.setStatus(status, StatusKind.ERROR)
+                    setOverlayStatus(status, StatusKind.ERROR)
                 }
                 updateNotification(running = false)
             }
@@ -734,7 +764,7 @@ class LiveTranslateService : Service() {
     private fun tryReconnect(reason: String) {
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             scope.launch {
-                overlay?.setStatus(
+                setOverlayStatus(
                     getString(R.string.status_reconnect_failed, reason),
                     StatusKind.ERROR,
                 )
@@ -745,7 +775,7 @@ class LiveTranslateService : Service() {
         val delayMs = RECONNECT_BASE_DELAY_MS shl reconnectAttempts
         reconnectAttempts++
         reconnectJob = scope.launch {
-            overlay?.setStatus(
+            setOverlayStatus(
                 getString(
                     R.string.status_reconnecting,
                     delayMs / 1000, reconnectAttempts, MAX_RECONNECT_ATTEMPTS,
