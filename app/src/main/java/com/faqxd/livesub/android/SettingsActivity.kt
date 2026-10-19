@@ -215,7 +215,17 @@ class SettingsActivity : AppCompatActivity() {
         }
         langPicker.setAdapter(langAdapter)
         langPicker.setText(Languages.nameFor(settings.targetLanguage), false)
-        // Tap = open the full list; free typing filters as usual.
+        // Tap = open the full list; free typing filters as usual. The first
+        // tap on an unfocused editable only grants focus (and opens the
+        // IME) without firing onClick, so focus opens the list as well.
+        langPicker.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                langPicker.filter.filter(
+                    "",
+                    android.widget.Filter.FilterListener { _ -> langPicker.showDropDown() },
+                )
+            }
+        }
         langPicker.setOnClickListener {
             langPicker.filter.filter(
                 "",
