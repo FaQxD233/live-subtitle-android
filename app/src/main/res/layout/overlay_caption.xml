@@ -24,7 +24,7 @@
         android:elevation="16dp"
         android:outlineAmbientShadowColor="#66000000"
         android:outlineSpotShadowColor="#CC000000"
-        android:minWidth="280dp"
+        android:minWidth="300dp"
         android:orientation="vertical"
         android:paddingHorizontal="18dp"
         android:paddingVertical="14dp">
@@ -152,8 +152,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:background="@drawable/overlay_btn_primary"
-                android:minWidth="76dp"
-                android:paddingHorizontal="12dp"
+                android:minWidth="68dp"
+                android:paddingHorizontal="10dp"
                 android:text="@string/start"
                 android:textColor="@color/hud_text_primary"
                 android:textSize="12sp"
@@ -163,10 +163,10 @@
                 android:id="@+id/overlayClearBtn"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:background="@drawable/overlay_btn_secondary"
-                android:minWidth="64dp"
-                android:paddingHorizontal="12dp"
+                android:minWidth="56dp"
+                android:paddingHorizontal="10dp"
                 android:text="@string/clear"
                 android:textColor="@color/hud_text_primary"
                 android:textSize="12sp" />
@@ -176,12 +176,30 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
+            <!-- Quick toggle for the original (source) transcript; highlighted while shown. -->
+            <Button
+                android:id="@+id/overlayOriginalBtn"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:background="@drawable/overlay_btn_secondary"
+                android:contentDescription="@string/overlay_original_desc"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:text="@string/overlay_original"
+                android:textAllCaps="false"
+                android:textColor="@color/hud_text_primary"
+                android:textSize="10sp" />
+
             <ImageButton
                 android:id="@+id/overlaySettingsBtn"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginStart="4dp"
                 android:background="@drawable/overlay_btn_secondary"
                 android:contentDescription="@string/open_settings"
+                android:padding="3dp"
+                android:scaleType="fitCenter"
                 android:src="@android:drawable/ic_menu_preferences"
                 android:tint="@color/hud_text_primary" />
         </LinearLayout>

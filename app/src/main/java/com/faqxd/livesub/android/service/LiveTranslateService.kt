@@ -156,6 +156,21 @@ class LiveTranslateService : Service() {
         }
     }
 
+    /**
+     * Show / hide the original transcript from the overlay. Starts from the
+     * latest persisted settings (like [toggleDirection]) so values changed in
+     * SettingsActivity meanwhile are never overwritten by a stale snapshot.
+     * Only the overlay style changes; the pipeline keeps running.
+     */
+    private fun toggleShowOriginal() {
+        val s = AppSettings.load(this)
+        s.showOriginal = !s.showOriginal
+        s.save(this)
+        settings = s
+        overlay?.updateSettings(s)
+        overlay?.applyStyle()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopPipeline()
@@ -442,6 +457,9 @@ class LiveTranslateService : Service() {
                     }
                     override fun onToggleDirectionClicked() {
                         toggleDirection()
+                    }
+                    override fun onToggleOriginalClicked() {
+                        toggleShowOriginal()
                     }
                 },
             )

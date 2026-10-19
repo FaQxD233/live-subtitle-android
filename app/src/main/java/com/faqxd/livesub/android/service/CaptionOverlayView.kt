@@ -30,7 +30,8 @@ import com.faqxd.livesub.android.data.Languages
  *    `hud_window.py:_TransparentSizeGrip` (4 QSizeGrips, one per corner).
  *  - Shows: status dot + text, target-language badge, close button,
  *    translated output (primary, scrollable, **bold**), original input
- *    (secondary, scrollable, italic), control bar (Toggle / Clear / Settings).
+ *    (secondary, scrollable, italic), control bar (Toggle / Clear /
+ *    Original / Settings).
  *
  * All public methods must be called on the main thread.
  */
@@ -47,6 +48,8 @@ class CaptionOverlayView(
         fun onCloseClicked()
         /** Fired when the user taps the Live direction-swap button. */
         fun onToggleDirectionClicked()
+        /** Fired when the user taps the original-transcript toggle. */
+        fun onToggleOriginalClicked()
     }
 
     // ---- Caption text state (mirrors HUDWindow._out_committed / _out_draft) ----
@@ -75,6 +78,7 @@ class CaptionOverlayView(
     private lateinit var inputView: TextView
     private lateinit var toggleBtn: Button
     private lateinit var clearBtn: Button
+    private lateinit var originalBtn: Button
     private lateinit var settingsBtn: ImageButton
     private lateinit var directionBtn: Button
     private lateinit var resizeTL: ImageView
@@ -88,7 +92,7 @@ class CaptionOverlayView(
     private val density: Float = context.resources.displayMetrics.density
 
     /** Minimum overlay dimensions in pixels. */
-    private val minWidthPx: Int = (280 * density).toInt()
+    private val minWidthPx: Int = (300 * density).toInt()
     private val minHeightPx: Int = (200 * density).toInt()
     private val maxWidthPx: Int = (720 * density).toInt()
     private val maxHeightPx: Int = (640 * density).toInt()
@@ -116,6 +120,7 @@ class CaptionOverlayView(
         inputView = rootView.findViewById(R.id.overlayInput)
         toggleBtn = rootView.findViewById(R.id.overlayToggleBtn)
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
+        originalBtn = rootView.findViewById(R.id.overlayOriginalBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
         directionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
         resizeTL = rootView.findViewById(R.id.overlayResizeTL)
@@ -125,6 +130,7 @@ class CaptionOverlayView(
 
         toggleBtn.setOnClickListener { callbacks.onToggleClicked() }
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
+        originalBtn.setOnClickListener { callbacks.onToggleOriginalClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
         directionBtn.setOnClickListener {
@@ -235,6 +241,11 @@ class CaptionOverlayView(
         val showOrig = settings.showOriginal
         divider.visibility = if (showOrig) View.VISIBLE else View.GONE
         inputScroll.visibility = if (showOrig) View.VISIBLE else View.GONE
+        // The control-bar toggle is highlighted while the original is shown.
+        originalBtn.isSelected = showOrig
+        originalBtn.setBackgroundResource(
+            if (showOrig) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary
+        )
         // Card opacity: alpha is applied to the whole root view. Keep it
         // high enough that the drop shadow stays visible.
         val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
