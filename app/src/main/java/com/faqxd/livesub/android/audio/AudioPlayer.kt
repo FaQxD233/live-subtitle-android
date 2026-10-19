@@ -15,7 +15,8 @@ import kotlin.concurrent.withLock
  * Port of `audio.py:AudioPlayer`.
  *
  * Plays back the 24 kHz mono PCM16 audio that Gemini Live returns when
- * `echoTargetLanguage` is enabled. Uses [AudioTrack] in streaming mode
+ * translation playback ([com.faqxd.livesub.android.data.AppSettings.playTranslation])
+ * is enabled. Uses [AudioTrack] in streaming mode
  * (write-blocking), with a background thread draining an internal buffer.
  *
  * Input is int16 LE (matches the Windows `enqueue_pcm16` API); we convert

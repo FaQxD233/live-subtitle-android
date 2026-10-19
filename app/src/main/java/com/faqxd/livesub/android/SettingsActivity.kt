@@ -34,6 +34,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var sourceSpinner: Spinner
     private lateinit var volumeSlider: SeekBar
     private lateinit var echoCheck: CheckBox
+    private lateinit var echoSameLangCheck: CheckBox
     private lateinit var fontSlider: SeekBar
     private lateinit var opacitySlider: SeekBar
     private lateinit var showOriginalCheck: CheckBox
@@ -60,6 +61,7 @@ class SettingsActivity : AppCompatActivity() {
         sourceSpinner = findViewById(R.id.sourceSpinner)
         volumeSlider = findViewById(R.id.volumeSlider)
         echoCheck = findViewById(R.id.echoCheck)
+        echoSameLangCheck = findViewById(R.id.echoSameLangCheck)
         fontSlider = findViewById(R.id.fontSlider)
         opacitySlider = findViewById(R.id.opacitySlider)
         showOriginalCheck = findViewById(R.id.showOriginalCheck)
@@ -99,6 +101,7 @@ class SettingsActivity : AppCompatActivity() {
                 prev.apiBase != settings.apiBase ||
                 prev.targetLanguage != settings.targetLanguage ||
                 prev.audioSource != settings.audioSource ||
+                prev.playTranslation != settings.playTranslation ||
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
                 prev.liveModel != settings.liveModel ||
                 prev.liveDirection != settings.liveDirection
@@ -168,7 +171,8 @@ class SettingsActivity : AppCompatActivity() {
         )
 
         volumeSlider.progress = (settings.playbackVolume * 100).toInt()
-        echoCheck.isChecked = settings.echoTargetLanguage
+        echoCheck.isChecked = settings.playTranslation
+        echoSameLangCheck.isChecked = settings.echoTargetLanguage
         // Range 14..60, so shift by 14
         fontSlider.progress = (settings.fontSize - 14).coerceIn(0, 46)
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
@@ -186,7 +190,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         settings.audioSource = if (sourceSpinner.selectedItemPosition == 1) "system" else "mic"
         settings.playbackVolume = volumeSlider.progress / 100f
-        settings.echoTargetLanguage = echoCheck.isChecked
+        settings.playTranslation = echoCheck.isChecked
+        settings.echoTargetLanguage = echoSameLangCheck.isChecked
         settings.fontSize = (fontSlider.progress + 14).coerceIn(14, 60)
         settings.bgOpacity = opacitySlider.progress / 100f
         settings.showOriginal = showOriginalCheck.isChecked

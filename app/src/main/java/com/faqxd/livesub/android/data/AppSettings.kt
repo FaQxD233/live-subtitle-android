@@ -20,6 +20,7 @@ import androidx.core.content.edit
  *  - audioSource         — "mic" or "system" (loopback via MediaProjection).
  *  - fontSize            — Caption font size in sp.
  *  - bgOpacity           — 0..1 background alpha for the overlay card.
+ *  - playTranslation     — Whether to play the translated audio locally.
  *  - echoTargetLanguage  — Whether the model also repeats input that is
  *                          already in the target language (API field).
  *  - playbackVolume      — 0..1 playback volume.
@@ -35,6 +36,7 @@ data class AppSettings(
     var audioSource: String = "mic",
     var fontSize: Int = 16,
     var bgOpacity: Float = 0.6f,
+    var playTranslation: Boolean = false,
     var echoTargetLanguage: Boolean = false,
     var playbackVolume: Float = 0.8f,
     var showOriginal: Boolean = false,
@@ -123,7 +125,11 @@ data class AppSettings(
                 ) "mic" else audioSource,
                 fontSize = prefs.getInt("font_size", 16),
                 bgOpacity = prefs.getFloat("bg_opacity", 0.6f),
-                echoTargetLanguage = prefs.getBoolean("echo_target", false),
+                // "echo_target" historically controlled both local playback
+                // and the API's same-language echo. It now feeds
+                // playTranslation only; the API flag moved to its own key.
+                playTranslation = prefs.getBoolean("echo_target", false),
+                echoTargetLanguage = prefs.getBoolean("echo_same_language", false),
                 playbackVolume = prefs.getFloat("playback_volume", 0.8f),
                 showOriginal = prefs.getBoolean("show_original", false),
                 liveModel = liveModel,
@@ -169,7 +175,8 @@ data class AppSettings(
             putString("audio_source", audioSource)
             putInt("font_size", fontSize)
             putFloat("bg_opacity", bgOpacity)
-            putBoolean("echo_target", echoTargetLanguage)
+            putBoolean("echo_target", playTranslation)
+            putBoolean("echo_same_language", echoTargetLanguage)
             putFloat("playback_volume", playbackVolume)
             putBoolean("show_original", showOriginal)
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })

@@ -72,7 +72,8 @@
     <string name="audio_source_system">System audio (loopback)</string>
     <string name="translate_to">Translate to</string>
     <string name="playback_volume">Playback volume</string>
-    <string name="echo_target">Echo target-language audio</string>
+    <string name="echo_playback">Play the translated audio</string>
+    <string name="echo_same_language">Repeat input that is already in the target language</string>
     <string name="font_size">Caption font size</string>
     <string name="bg_opacity">Background opacity</string>
     <string name="show_original">Show original (source) transcript</string>

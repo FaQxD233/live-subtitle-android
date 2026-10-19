@@ -287,9 +287,9 @@ class LiveTranslateService : Service() {
             return
         }
 
-        // Player (echo).
-        val wantEcho = s.echoTargetLanguage
-        if (wantEcho) {
+        // Player (translation playback). Independent of the API's
+        // same-language echo flag ([AppSettings.echoTargetLanguage]).
+        if (s.playTranslation) {
             try {
                 val p = AudioPlayer(gain = s.playbackVolume).also { player = it }
                 p.start()

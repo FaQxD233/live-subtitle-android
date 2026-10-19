@@ -152,7 +152,16 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="@string/echo_target"
+                android:text="@string/echo_playback"
+                android:textColor="@color/text_primary_light"
+                android:textSize="13sp" />
+
+            <CheckBox
+                android:id="@+id/echoSameLangCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/echo_same_language"
                 android:textColor="@color/text_primary_light"
                 android:textSize="13sp" />
         </LinearLayout>
