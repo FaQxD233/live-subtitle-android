@@ -72,8 +72,9 @@ class CaptionOverlayView(
     private val outMerger = SegmentMerger()
     private var inCommitted = ""
     private val inMerger = SegmentMerger()
-    // Most recent finalized output segment, shown alone in latest-only mode.
+    // Most recent finalized segments, shown alone in latest-only mode.
     private var lastOutFinalized = ""
+    private var lastInFinalized = ""
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
@@ -233,6 +234,7 @@ class CaptionOverlayView(
     fun setInput(text: String?) {
         val finalized = inMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
+            lastInFinalized = finalized
             inCommitted = capHistory(inCommitted + finalized, MAX_INPUT_CHARS)
         }
         refreshInput()
@@ -258,6 +260,7 @@ class CaptionOverlayView(
         lastOutFinalized = ""
         inCommitted = ""
         inMerger.reset()
+        lastInFinalized = ""
         refreshOutput()
         refreshInput()
     }
@@ -391,10 +394,12 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        // Latest-only mode shows just the sentence being spoken right now
-        // (last finalized segment + the streaming draft) instead of history.
+        // Latest-only mode shows just the sentence being spoken right now:
+        // the previous finalized line stays above the streaming draft until
+        // the next one completes. A newline separates them — languages
+        // differ on inter-sentence spacing.
         val text = if (settings.showLatestOnly) {
-            (lastOutFinalized + outMerger.draft).trim()
+            joinLatest(lastOutFinalized, outMerger.draft)
         } else {
             (outCommitted + outMerger.draft).trim()
         }.let { if (it.isEmpty()) it else it.take(MAX_OUTPUT_CHARS) }
@@ -415,10 +420,25 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = (inCommitted + inMerger.draft).trim()
+        val text = if (settings.showLatestOnly) {
+            joinLatest(lastInFinalized, inMerger.draft)
+        } else {
+            (inCommitted + inMerger.draft).trim()
+        }.let { if (it.isEmpty()) it else it.take(MAX_INPUT_CHARS) }
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    /** Latest-only text: finalized line on top, streaming draft below. */
+    private fun joinLatest(finalized: String, draft: String): String {
+        val f = finalized.trim()
+        val d = draft.trim()
+        return when {
+            f.isEmpty() -> d
+            d.isEmpty() -> f
+            else -> "$f\n$d"
         }
     }
 
