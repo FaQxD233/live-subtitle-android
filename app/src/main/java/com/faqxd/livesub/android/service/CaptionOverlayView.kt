@@ -124,8 +124,10 @@ class CaptionOverlayView(
     private val density: Float = context.resources.displayMetrics.density
     private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
 
-    /** Minimum overlay dimensions in pixels. */
-    private val minWidthPx: Int = (300 * density).toInt()
+    /** Minimum overlay dimensions in pixels. The width leaves enough room
+     * for the control bar (298dp fixed at the previous 300dp minimum was
+     * down to a 2dp margin, which large system font scales overflowed). */
+    private val minWidthPx: Int = (340 * density).toInt()
     private val minHeightPx: Int = (200 * density).toInt()
     private val maxWidthPx: Int = (720 * density).toInt()
     private val maxHeightPx: Int = (640 * density).toInt()

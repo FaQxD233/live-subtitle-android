@@ -28,7 +28,7 @@
         android:elevation="16dp"
         android:outlineAmbientShadowColor="#66000000"
         android:outlineSpotShadowColor="#CC000000"
-        android:minWidth="300dp"
+        android:minWidth="340dp"
         android:orientation="vertical"
         android:paddingHorizontal="18dp"
         android:paddingVertical="14dp">
