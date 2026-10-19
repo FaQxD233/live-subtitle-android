@@ -94,7 +94,11 @@ class AudioCapture(
             TAG,
             "Microphone capture started: rate=$nativeRate ch=1 source=${ar.audioSource} buf=$minBuf"
         )
-        captureThread = Thread({ micLoop(ar, minBuf) }, "AudioCapture-mic").apply {
+        // Read in 40 ms blocks (small enough for low latency, large enough
+        // to amortize the JNI/read overhead) while the AudioRecord keeps its
+        // larger internal buffer.
+        val readBytes = nativeRate / 25 * 2  // 40 ms of mono PCM16 at nativeRate
+        captureThread = Thread({ micLoop(ar, minBuf, readBytes) }, "AudioCapture-mic").apply {
             isDaemon = true
             start()
         }
@@ -177,11 +181,13 @@ class AudioCapture(
         return 48000
     }
 
-    private fun micLoop(ar: AudioRecord, bufSize: Int) {
+    private fun micLoop(ar: AudioRecord, bufSize: Int, readBytes: Int) {
         // Capture at native rate (e.g. 48 kHz), then downsample to 16 kHz
         // before forwarding. Same pipeline as the system-audio branch.
-        val buf = ByteArray(bufSize)
-        val floats = FloatArray(bufSize / 2)
+        // Reads use [readBytes] (40 ms) for latency; [bufSize] only feeds
+        // the heartbeat log modulo below.
+        val buf = ByteArray(readBytes)
+        val floats = FloatArray(readBytes / 2)
         val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         var silentChunks = 0
         var totalRead = 0L
@@ -347,6 +353,6 @@ class AudioCapture(
         const val GEMINI_INPUT_RATE = 16000
         const val CHUNK_SIZE = 3200  // bytes per Gemini send (~100 ms @16kHz mono int16)
         private const val SILENCE_RMS_THRESHOLD = 0.005  // ~-46 dBFS; below this we call it silent
-        private const val LOG_SILENCE_AFTER = 30  // ~3s of silent 100ms chunks before we warn
+        private const val LOG_SILENCE_AFTER = 75  // ~3s of silent 40ms mic chunks before we warn
     }
 }
