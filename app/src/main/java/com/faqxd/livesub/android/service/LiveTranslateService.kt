@@ -14,6 +14,8 @@ import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -123,6 +125,41 @@ class LiveTranslateService : Service() {
         // The framework holds the listener only weakly, so keep a strong
         // field reference (see [prefsListener]).
         AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
+        registerNetworkCallback()
+    }
+
+    /**
+     * When a network comes back after an outage, most likely the disconnect
+     * reason is gone: skip the remaining reconnect backoff and retry right
+     * away. Only kicks in while a reconnect is pending — an idle/paused
+     * pipeline is never auto-started.
+     */
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            scope.launch {
+                if (!running && reconnectJob != null) {
+                    Log.i(TAG, "network available — reconnecting immediately")
+                    cancelReconnect()
+                    startPipelineWithCachedGrant()
+                }
+            }
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.registerDefaultNetworkCallback(networkCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "network callback registration failed: ${e.message}")
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
     }
 
     /**
@@ -267,6 +304,7 @@ class LiveTranslateService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
+        unregisterNetworkCallback()
         stopPipeline()
         // Forget the projection token so a later start doesn't try to use a
         // stale grant. ACTION_RESTART preserves it (see [restartPipelineIfNeeded]).
