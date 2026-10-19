@@ -83,6 +83,13 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         saveBtn.setOnClickListener {
+            // Reject a bad base URL before touching anything else.
+            val apiBaseError = validateApiBase(apiBaseEdit.text.toString())
+            if (apiBaseError != null) {
+                apiBaseEdit.error = apiBaseError
+                return@setOnClickListener
+            }
+            apiBaseEdit.error = null
             // Snapshot the pre-edit values so we can decide whether the
             // running pipeline needs a hot restart (mirrors
             // `settings_window.py:SettingsDialog` → `main.py:open_settings`).
@@ -116,6 +123,25 @@ class SettingsActivity : AppCompatActivity() {
             finish()
         }
         cancelBtn.setOnClickListener { finish() }
+    }
+
+    /**
+     * Validate the API base URL. Blank means "use the default". Otherwise
+     * only https:// or wss:// is accepted (Android's cleartext policy blocks
+     * plain http/ws anyway), and the host part must be non-empty.
+     *
+     * @return an error message, or null when the value is acceptable.
+     */
+    private fun validateApiBase(raw: String): String? {
+        val value = raw.trim()
+        if (value.isBlank()) return null
+        val hasScheme = value.startsWith("https://") || value.startsWith("wss://")
+        val host = value
+            .substringAfter("://", missingDelimiterValue = "")
+            .substringBefore('/')
+            .substringBefore('?')
+            .trim()
+        return if (hasScheme && host.isNotEmpty()) null else getString(R.string.api_base_invalid)
     }
 
     private fun populateViews() {

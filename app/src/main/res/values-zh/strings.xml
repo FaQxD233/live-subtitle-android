@@ -67,6 +67,7 @@
     <string name="section_advanced">高级设置</string>
     <string name="api_key_hint">粘贴你的 Google Gemini API 密钥</string>
     <string name="api_base_hint">API Base URL（默认：Google 官方）</string>
+    <string name="api_base_invalid">仅支持 https:// 或 wss:// 开头且主机名非空的地址（Android 默认禁止明文 http）。</string>
     <string name="audio_source">音频源</string>
     <string name="audio_source_mic">麦克风</string>
     <string name="audio_source_system">系统音频（回环）</string>

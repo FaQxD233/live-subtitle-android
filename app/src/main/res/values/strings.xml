@@ -66,6 +66,7 @@
     <string name="section_advanced">ADVANCED</string>
     <string name="api_key_hint">Paste your Google Gemini API key</string>
     <string name="api_base_hint">API Base URL (default: Google official)</string>
+    <string name="api_base_invalid">Only https:// or wss:// URLs with a host name are supported (Android blocks plain http).</string>
     <string name="audio_source">Audio source</string>
     <string name="audio_source_mic">Microphone</string>
     <string name="audio_source_system">System audio (loopback)</string>
