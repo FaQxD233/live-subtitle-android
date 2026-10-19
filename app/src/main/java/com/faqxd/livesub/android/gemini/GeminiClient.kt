@@ -35,7 +35,8 @@ class GeminiClient(
         fun onInputTranscript(text: String)
         fun onOutputTranscript(text: String)
         fun onAudioChunk(pcm16: ByteArray)
-        fun onStatus(status: String)
+        /** Socket open and the setup envelope has been sent; awaiting setupComplete. */
+        fun onSetupSent()
         fun onConnected()
         /**
          * Session dropped. [retryable] hints whether an automatic reconnect
@@ -91,18 +92,16 @@ class GeminiClient(
             .build()
         ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                listener.onStatus("Gemini socket opened")
                 if (!sendSetup(webSocket)) {
                     running = false
                     setupComplete = false
                     ws = null
                     intentionalStop = true
-                    listener.onStatus("Gemini setup send failed")
                     reportDisconnect("Setup send failed", retryable = true)
                     webSocket.close(1000, "setup failed")
                     return
                 }
-                listener.onStatus("Gemini setup sent")
+                listener.onSetupSent()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -120,7 +119,6 @@ class GeminiClient(
                 // echoes the close frame, so complete the handshake here.
                 webSocket.close(1000, null)
                 if (intentionalStop) return
-                listener.onStatus("Gemini closed: $code $reason")
                 reportDisconnect(closeReason(code, reason), isRetryableCloseCode(code))
             }
 
@@ -130,7 +128,6 @@ class GeminiClient(
                 setupComplete = false
                 ws = null
                 if (intentionalStop) return
-                listener.onStatus("Gemini error: ${t.message ?: "unknown"}")
                 reportDisconnect(
                     "Error: ${t.message ?: "unknown"}",
                     isRetryableFailure(response),
@@ -142,7 +139,6 @@ class GeminiClient(
                 setupComplete = false
                 ws = null
                 if (!intentionalStop) {
-                    listener.onStatus("Gemini closed: $code $reason")
                     reportDisconnect(closeReason(code, reason), isRetryableCloseCode(code))
                 }
             }
@@ -179,7 +175,6 @@ class GeminiClient(
             running = false
             setupComplete = false
             ws = null
-            listener.onStatus("Gemini audio send failed")
             reportDisconnect("Audio send failed", retryable = true)
         }
     }
@@ -240,8 +235,8 @@ class GeminiClient(
         val root = try {
             JSONObject(raw)
         } catch (e: Exception) {
+            // Malformed frames only matter for debugging; don't spam the UI.
             Log.w(TAG, "parse failed: ${e.message}")
-            listener.onStatus("Parse failed: ${e.message}")
             return
         }
 
@@ -249,7 +244,6 @@ class GeminiClient(
         root.optJSONObject("error")?.let { err ->
             val msg = err.optString("message", "Unknown")
             Log.w(TAG, "server error: $msg  full=$raw")
-            listener.onStatus("Gemini error: $msg")
             running = false
             ws?.close(1000, "server error")
             ws = null
@@ -262,7 +256,6 @@ class GeminiClient(
             Log.i(TAG, "setupComplete received — pipeline ready")
             if (running && !setupComplete) {
                 setupComplete = true
-                listener.onStatus("Gemini session ready")
                 listener.onConnected()
             }
             return

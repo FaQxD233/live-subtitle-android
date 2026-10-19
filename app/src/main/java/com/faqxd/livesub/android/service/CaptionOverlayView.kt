@@ -50,6 +50,9 @@ class CaptionOverlayView(
     private val callbacks: Callbacks,
 ) {
 
+    /** Drives the status-dot color; the caller classifies the state. */
+    enum class StatusKind { IDLE, CONNECTING, CONNECTED, ERROR }
+
     interface Callbacks {
         fun onToggleClicked()
         fun onClearClicked()
@@ -73,8 +76,6 @@ class CaptionOverlayView(
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
-
-    private enum class StatusKind { IDLE, CONNECTING, CONNECTED, ERROR }
 
     // ---- Minimized pill state ----
     private var isMinimized = false
@@ -227,16 +228,18 @@ class CaptionOverlayView(
         refreshInput()
     }
 
-    fun setStatus(status: String?) {
+    /**
+     * Show a status line. The caller supplies the [StatusKind] explicitly so
+     * the dot color can't be fooled by the text content (e.g. a model name
+     * containing "live").
+     */
+    fun setStatus(status: String?, kind: StatusKind = StatusKind.IDLE) {
         statusText = (status ?: "").take(MAX_STATUS_CHARS)
-        val s = statusText.lowercase()
-        statusKind = when {
-            listOf("connected", "ready", "live").any { it in s } -> StatusKind.CONNECTED
-            listOf("connect", "starting", "loading", "init").any { it in s } -> StatusKind.CONNECTING
-            listOf("error", "fail", "disconnected").any { it in s } -> StatusKind.ERROR
-            else -> StatusKind.IDLE
-        }
+        statusKind = kind
         refreshStatus()
+        // The caption placeholder depends on the status ("connecting…" while
+        // the pipeline is spinning up), so re-evaluate it too.
+        refreshOutput()
     }
 
     fun clear() {

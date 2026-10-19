@@ -23,6 +23,13 @@
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
     <string name="status_stopped">Stopped</string>
+    <string name="status_session_setup">Setting up session…</string>
+    <string name="status_disconnected">Disconnected: %1$s</string>
+    <string name="status_reconnecting">Reconnecting in %1$d s (attempt %2$d/%3$d)…</string>
+    <string name="status_reconnect_failed">Reconnect failed: %1$s</string>
+    <string name="status_system_audio_permission">System audio permission required</string>
+    <string name="status_capture_error">Capture error: %1$s</string>
+    <string name="status_start_failed">Start failed: %1$s</string>
     <string name="floating_overlay_idle_hint">Floating caption overlay will appear when running.</string>
     <string name="floating_overlay_hint">Floating caption overlay will appear on top of other apps.</string>
 

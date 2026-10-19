@@ -28,6 +28,7 @@ import com.faqxd.livesub.android.audio.AudioCapture
 import com.faqxd.livesub.android.audio.AudioPlayer
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.gemini.GeminiClient
+import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.transcript.TranscriptExporter
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
 import kotlinx.coroutines.CancellationException
@@ -249,9 +250,9 @@ class LiveTranslateService : Service() {
         }
 
         if (s.audioSource == "system" && resultData == null) {
-            val status = "System audio permission required"
+            val status = getString(R.string.status_system_audio_permission)
             overlay?.setRunningState(false)
-            overlay?.setStatus(status)
+            overlay?.setStatus(status, StatusKind.ERROR)
             updateNotification(running = false)
             notifyStatus(status)
             return
@@ -289,14 +290,14 @@ class LiveTranslateService : Service() {
         running = true
         pipelineRunning = true
         overlay?.setRunningState(true)
-        overlay?.setStatus("Connecting...")
+        overlay?.setStatus(getString(R.string.status_connecting), StatusKind.CONNECTING)
         updateNotification(running = true)
 
         try {
             c.start()
         } catch (e: Exception) {
             Log.e(TAG, "Gemini client start failed", e)
-            failPipeline("Gemini start error: ${e.message}")
+            failPipeline(getString(R.string.status_start_failed, e.message ?: e.javaClass.simpleName))
             return
         }
     }
@@ -308,7 +309,7 @@ class LiveTranslateService : Service() {
         val c = client ?: return
         val resultData = pendingCaptureResultData
         if (s.audioSource == "system" && resultData == null) {
-            failPipeline("System audio permission required")
+            failPipeline(getString(R.string.status_system_audio_permission))
             return
         }
 
@@ -322,7 +323,7 @@ class LiveTranslateService : Service() {
                 scope.launch {
                     if (isCurrentSession(sessionId)) {
                         failPipeline(
-                            status = "Capture error: $reason",
+                            status = getString(R.string.status_capture_error, reason),
                             teardownProjectionGrant = s.audioSource == "system",
                         )
                     }
@@ -338,7 +339,10 @@ class LiveTranslateService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "AudioCapture start failed", e)
-            failPipeline("Capture error: ${e.message}", teardownProjectionGrant = true)
+            failPipeline(
+                getString(R.string.status_capture_error, e.message ?: e.javaClass.simpleName),
+                teardownProjectionGrant = true,
+            )
         }
     }
 
@@ -356,7 +360,7 @@ class LiveTranslateService : Service() {
         client = null
         if (teardownProjectionGrant) teardownProjection()
         overlay?.setRunningState(false)
-        overlay?.setStatus(status)
+        overlay?.setStatus(status, StatusKind.ERROR)
         updateNotification(running = false)
         notifyStatus(status)
     }
@@ -387,7 +391,7 @@ class LiveTranslateService : Service() {
         client?.stop()
         client = null
         overlay?.setRunningState(false)
-        overlay?.setStatus("Stopped")
+        overlay?.setStatus(getString(R.string.status_stopped), StatusKind.IDLE)
         updateNotification(running = false)
     }
 
@@ -465,7 +469,7 @@ class LiveTranslateService : Service() {
             startPipeline(lastResultCode, if (useSystem) lastResultData else null)
         } catch (e: Exception) {
             Log.e(TAG, "pipeline start failed", e)
-            failPipeline("Start failed: ${e.message ?: e.javaClass.simpleName}")
+            failPipeline(getString(R.string.status_start_failed, e.message ?: e.javaClass.simpleName))
         }
     }
 
@@ -610,9 +614,14 @@ class LiveTranslateService : Service() {
             // (OkHttp dispatcher in this case) to avoid stalling the WS reader.
             if (isCurrentSession(sessionId)) player?.enqueuePcm16(pcm16)
         }
-        override fun onStatus(status: String) {
+        override fun onSetupSent() {
             scope.launch {
-                if (isCurrentSession(sessionId)) overlay?.setStatus(status)
+                if (isCurrentSession(sessionId)) {
+                    overlay?.setStatus(
+                        getString(R.string.status_session_setup),
+                        StatusKind.CONNECTING,
+                    )
+                }
             }
         }
         override fun onConnected() {
@@ -622,7 +631,7 @@ class LiveTranslateService : Service() {
                 // counter is reset on disconnect only if the session lasted
                 // long enough (see onDisconnected).
                 connectedAtMs = SystemClock.elapsedRealtime()
-                overlay?.setStatus("Connected")
+                overlay?.setStatus(getString(R.string.status_connected), StatusKind.CONNECTED)
                 startCaptureForSession(sessionId)
                 if (isCurrentSession(sessionId) && running) {
                     updateNotification(running = true)
@@ -643,7 +652,7 @@ class LiveTranslateService : Service() {
                 ) {
                     reconnectAttempts = 0
                 }
-                val status = "Disconnected: $reason".take(80)
+                val status = getString(R.string.status_disconnected, reason).take(80)
                 if (running) {
                     // Unexpected disconnect — stop capture but keep the
                     // overlay visible so the user sees the status.
@@ -661,7 +670,7 @@ class LiveTranslateService : Service() {
                         failPipeline(status)
                     }
                 } else {
-                    overlay?.setStatus(status)
+                    overlay?.setStatus(status, StatusKind.ERROR)
                 }
                 updateNotification(running = false)
             }
@@ -694,7 +703,8 @@ class LiveTranslateService : Service() {
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             scope.launch {
                 overlay?.setStatus(
-                    "Reconnect failed after $MAX_RECONNECT_ATTEMPTS attempts: $reason".take(80)
+                    getString(R.string.status_reconnect_failed, reason),
+                    StatusKind.ERROR,
                 )
             }
             return
@@ -703,7 +713,13 @@ class LiveTranslateService : Service() {
         val delayMs = RECONNECT_BASE_DELAY_MS shl reconnectAttempts
         reconnectAttempts++
         reconnectJob = scope.launch {
-            overlay?.setStatus("Reconnecting in ${delayMs / 1000}s (attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS)...")
+            overlay?.setStatus(
+                getString(
+                    R.string.status_reconnecting,
+                    delayMs / 1000, reconnectAttempts, MAX_RECONNECT_ATTEMPTS,
+                ),
+                StatusKind.CONNECTING,
+            )
             delay(delayMs)
             // Bail out if the user manually restarted or stopped while we
             // were waiting.

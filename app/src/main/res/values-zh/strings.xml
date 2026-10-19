@@ -24,6 +24,13 @@
     <string name="status_connecting">连接中…</string>
     <string name="status_connected">已连接</string>
     <string name="status_stopped">已停止</string>
+    <string name="status_session_setup">正在建立会话…</string>
+    <string name="status_disconnected">已断开：%1$s</string>
+    <string name="status_reconnecting">%1$d 秒后重连（第 %2$d/%3$d 次）…</string>
+    <string name="status_reconnect_failed">重连失败：%1$s</string>
+    <string name="status_system_audio_permission">需要系统音频授权</string>
+    <string name="status_capture_error">音频采集出错：%1$s</string>
+    <string name="status_start_failed">启动失败：%1$s</string>
     <string name="floating_overlay_idle_hint">运行时将显示悬浮字幕窗口。</string>
     <string name="floating_overlay_hint">悬浮字幕窗口将显示在其他应用上方。</string>
 
