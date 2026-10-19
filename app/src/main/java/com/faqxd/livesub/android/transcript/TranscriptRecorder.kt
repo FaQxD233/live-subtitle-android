@@ -56,6 +56,34 @@ class TranscriptRecorder(
     private val lines = ArrayList<Line>()
     private val tracks = Stream.values().associateWith { Track(it) }
 
+    // --- persistence (lets an export survive process death) ---
+    private var persistHook: ((List<Line>, Long) -> Unit)? = null
+    private var lastPersistAt = 0L
+
+    /** Register a sink for throttled full snapshots; call before appends. */
+    fun setPersistHook(hook: ((List<Line>, Long) -> Unit)?) {
+        persistHook = hook
+    }
+
+    /** Restore previously persisted lines (oldest first). */
+    fun restore(restored: List<Line>, restoredStartedAt: Long) {
+        if (restored.isEmpty()) return
+        lines.clear()
+        lines.addAll(restored.takeLast(MAX_LINES))
+        if (startedAt == 0L && restoredStartedAt > 0) startedAt = restoredStartedAt
+    }
+
+    /** Force a persist, e.g. right before the service goes away. */
+    fun flushPersist() = maybePersist(force = true)
+
+    private fun maybePersist(force: Boolean = false) {
+        val hook = persistHook ?: return
+        val now = clock()
+        if (!force && now - lastPersistAt < PERSIST_INTERVAL_MS) return
+        lastPersistAt = now
+        hook(snapshot(), startedAt)
+    }
+
     /** Record one transcription segment for [stream]. */
     fun append(stream: Stream, segment: String) {
         if (segment.isEmpty()) return
@@ -66,11 +94,13 @@ class TranscriptRecorder(
         if (track.isEmpty) track.startedAt = now
         track.finalized.append(track.merger.push(segment))
         track.lastAt = now
+        maybePersist()
     }
 
     /** End the lines in progress, e.g. when a new session starts. */
     fun breakLines() {
         tracks.values.forEach { closeLine(it) }
+        maybePersist(force = true)
     }
 
     /** Every line in time order, including the ones still being written. */
@@ -111,5 +141,7 @@ class TranscriptRecorder(
         const val PAUSE_GAP_MS = 2000L
         // Safety cap for very long runs; the oldest lines are dropped first.
         private const val MAX_LINES = 20_000
+        // Minimum spacing between full snapshot writes.
+        private const val PERSIST_INTERVAL_MS = 2000L
     }
 }
