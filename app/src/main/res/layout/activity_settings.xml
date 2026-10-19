@@ -110,6 +110,16 @@
                 android:inputType="text"
                 android:paddingHorizontal="10dp"
                 android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/testConnBtn"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="8dp"
+                android:text="@string/test_connection"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <!-- AUDIO -->

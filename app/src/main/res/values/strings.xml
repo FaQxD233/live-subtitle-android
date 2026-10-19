@@ -72,6 +72,10 @@
     <string name="audio_source_system">System audio (loopback)</string>
     <string name="translate_to">Translate to</string>
     <string name="language_search_hint">Search language…</string>
+    <string name="test_connection">Test connection</string>
+    <string name="testing_connection">Testing…</string>
+    <string name="test_ok">Connection OK — setup accepted.</string>
+    <string name="test_failed">Connection failed: %1$s</string>
     <string name="playback_volume">Playback volume</string>
     <string name="echo_playback">Play the translated audio</string>
     <string name="echo_same_language">Repeat input that is already in the target language</string>

@@ -11,6 +11,7 @@ import android.widget.EditText
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
@@ -47,6 +48,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
     private lateinit var cancelBtn: Button
+    private lateinit var testConnBtn: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +77,7 @@ class SettingsActivity : AppCompatActivity() {
         modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
         cancelBtn = findViewById(R.id.cancelBtn)
+        testConnBtn = findViewById(R.id.testConnBtn)
 
         showKeyBtn.setOnClickListener {
             val showing = apiKeyEdit.inputType and InputType.TYPE_MASK_VARIATION !=
@@ -129,6 +132,33 @@ class SettingsActivity : AppCompatActivity() {
             finish()
         }
         cancelBtn.setOnClickListener { finish() }
+
+        testConnBtn.setOnClickListener {
+            val apiKey = apiKeyEdit.text.toString().trim()
+            if (apiKey.isBlank()) {
+                apiKeyEdit.error = getString(R.string.err_no_api_key)
+                return@setOnClickListener
+            }
+            apiKeyEdit.error = null
+            val base = apiBaseEdit.text.toString().trim().ifBlank { AppSettings.DEFAULT_API_BASE }
+            val model = modelEdit.text.toString().trim().ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
+            testConnBtn.isEnabled = false
+            testConnBtn.text = getString(R.string.testing_connection)
+            // Probe on a worker thread; toast the outcome on the main thread.
+            Thread {
+                val result = ConnectionTester.test(apiKey, base, model)
+                runOnUiThread {
+                    testConnBtn.isEnabled = true
+                    testConnBtn.text = getString(R.string.test_connection)
+                    val message = when (result) {
+                        is ConnectionTester.Result.Ok -> getString(R.string.test_ok)
+                        is ConnectionTester.Result.Failed ->
+                            getString(R.string.test_failed, result.detail)
+                    }
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+            }.start()
+        }
     }
 
     /**

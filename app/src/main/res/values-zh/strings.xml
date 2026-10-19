@@ -73,6 +73,10 @@
     <string name="audio_source_system">系统音频（回环）</string>
     <string name="translate_to">翻译到</string>
     <string name="language_search_hint">搜索语言…</string>
+    <string name="test_connection">测试连接</string>
+    <string name="testing_connection">测试中…</string>
+    <string name="test_ok">连接成功，setup 已被接受。</string>
+    <string name="test_failed">连接失败：%1$s</string>
     <string name="playback_volume">播放音量</string>
     <string name="echo_playback">播放翻译语音</string>
     <string name="echo_same_language">同语种输入也复述（源语言与目标相同）</string>
