@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -46,6 +47,8 @@ class AudioCapture(
 
     private var record: AudioRecord? = null
     private var captureThread: Thread? = null
+    // Active echo canceller for the mic path (speaker + mic at once).
+    private var aec: AcousticEchoCanceler? = null
 
     @Volatile private var running = false
     private var sampleRate = 0
@@ -90,6 +93,7 @@ class AudioCapture(
         channels = 1
         running = true
         ar.startRecording()
+        enableEchoCancellation(ar)
         Log.i(
             TAG,
             "Microphone capture started: rate=$nativeRate ch=1 source=${ar.audioSource} buf=$minBuf"
@@ -131,8 +135,30 @@ class AudioCapture(
         }
     }
 
+    /**
+     * Best-effort acoustic echo cancellation for the mic path: when the
+     * translated speech plays through the speaker while the mic captures,
+     * AEC keeps the model from hearing its own translation. Devices without
+     * the effect simply skip it.
+     */
+    private fun enableEchoCancellation(ar: AudioRecord) {
+        try {
+            if (AcousticEchoCanceler.isAvailable()) {
+                aec = AcousticEchoCanceler.create(ar.audioSessionId)?.also {
+                    it.enabled = true
+                    Log.i(TAG, "AcousticEchoCanceler enabled: ${it.hasControl()}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "AEC setup failed: ${e.message}")
+        }
+    }
+
     fun stop() {
         running = false
+        try { aec?.enabled = false } catch (_: Exception) {}
+        try { aec?.release() } catch (_: Exception) {}
+        aec = null
         try { record?.stop() } catch (_: Exception) {}
         captureThread?.join(500)
         captureThread = null
