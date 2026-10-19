@@ -19,6 +19,7 @@ import android.widget.TextView
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.Languages
+import com.faqxd.livesub.android.transcript.SegmentMerger
 import kotlin.math.abs
 
 /**
@@ -35,7 +36,7 @@ import kotlin.math.abs
  *  - Shows: status dot + text, target-language badge, close button,
  *    translated output (primary, scrollable, **bold**), original input
  *    (secondary, scrollable, italic), control bar (Toggle / Clear /
- *    Original / Click-through / Settings).
+ *    Original / Click-through / Export / Settings).
  *  - Can collapse into a small draggable pill ([setMinimized]); captions
  *    keep updating in the background and show up again when expanded.
  *  - Can let touches pass through to the app underneath
@@ -60,13 +61,15 @@ class CaptionOverlayView(
         fun onToggleOriginalClicked()
         /** Fired after click-through mode was switched on or off. */
         fun onClickThroughChanged(enabled: Boolean)
+        /** Fired when the user taps the export button. */
+        fun onExportClicked()
     }
 
     // ---- Caption text state (mirrors HUDWindow._out_committed / _out_draft) ----
     private var outCommitted = ""
-    private var outDraft = ""
+    private val outMerger = SegmentMerger()
     private var inCommitted = ""
-    private var inDraft = ""
+    private val inMerger = SegmentMerger()
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
@@ -104,6 +107,7 @@ class CaptionOverlayView(
     private lateinit var clearBtn: Button
     private lateinit var originalBtn: Button
     private lateinit var clickThroughBtn: ImageButton
+    private lateinit var exportBtn: ImageButton
     private lateinit var settingsBtn: ImageButton
     private lateinit var directionBtn: Button
     private lateinit var resizeTL: ImageView
@@ -152,6 +156,7 @@ class CaptionOverlayView(
         clearBtn = rootView.findViewById(R.id.overlayClearBtn)
         originalBtn = rootView.findViewById(R.id.overlayOriginalBtn)
         clickThroughBtn = rootView.findViewById(R.id.overlayClickThroughBtn)
+        exportBtn = rootView.findViewById(R.id.overlayExportBtn)
         settingsBtn = rootView.findViewById(R.id.overlaySettingsBtn)
         directionBtn = rootView.findViewById(R.id.overlayDirectionBtn)
         resizeTL = rootView.findViewById(R.id.overlayResizeTL)
@@ -166,6 +171,7 @@ class CaptionOverlayView(
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
         originalBtn.setOnClickListener { callbacks.onToggleOriginalClicked() }
         clickThroughBtn.setOnClickListener { setClickThrough(true) }
+        exportBtn.setOnClickListener { callbacks.onExportClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
         closeBtn.setOnClickListener { callbacks.onCloseClicked() }
         directionBtn.setOnClickListener {
@@ -206,27 +212,17 @@ class CaptionOverlayView(
     // ---------- public API (mirrors HUDWindow) ----------
 
     fun setOutput(text: String?) {
-        val t = text ?: ""
-        if (outDraft.isNotEmpty() && t.startsWith(outDraft)) {
-            outDraft = t
-        } else {
-            if (outDraft.isNotEmpty()) {
-                outCommitted = appendLineLimited(outCommitted, outDraft, computeMaxOutputLines())
-            }
-            outDraft = t
+        val finalized = outMerger.push(text ?: "")
+        if (finalized.isNotEmpty()) {
+            outCommitted = appendLineLimited(outCommitted, finalized, computeMaxOutputLines())
         }
         refreshOutput()
     }
 
     fun setInput(text: String?) {
-        val t = text ?: ""
-        if (inDraft.isNotEmpty() && t.startsWith(inDraft)) {
-            inDraft = t
-        } else {
-            if (inDraft.isNotEmpty()) {
-                inCommitted = appendLineLimited(inCommitted, inDraft, computeMaxInputLines())
-            }
-            inDraft = t
+        val finalized = inMerger.push(text ?: "")
+        if (finalized.isNotEmpty()) {
+            inCommitted = appendLineLimited(inCommitted, finalized, computeMaxInputLines())
         }
         refreshInput()
     }
@@ -245,9 +241,9 @@ class CaptionOverlayView(
 
     fun clear() {
         outCommitted = ""
-        outDraft = ""
+        outMerger.reset()
         inCommitted = ""
-        inDraft = ""
+        inMerger.reset()
         refreshOutput()
         refreshInput()
     }
@@ -379,7 +375,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        var text = combineLineLimited(outCommitted, outDraft, computeMaxOutputLines())
+        var text = combineLineLimited(outCommitted, outMerger.draft, computeMaxOutputLines())
         if (text.isEmpty()) {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -397,7 +393,7 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = combineLineLimited(inCommitted, inDraft, computeMaxInputLines())
+        val text = combineLineLimited(inCommitted, inMerger.draft, computeMaxInputLines())
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }

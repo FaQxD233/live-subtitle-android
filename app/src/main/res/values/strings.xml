@@ -39,6 +39,18 @@
     <string name="overlay_click_through">Click-through</string>
     <string name="overlay_click_through_off">Exit click-through</string>
     <string name="overlay_click_through_hint">Click-through is on: touches now reach the app below. Tap the unlock button or the notification action to exit.</string>
+    <string name="overlay_export">Export captions</string>
+
+    <!-- Transcript export -->
+    <string name="export_chooser_title">Export captions</string>
+    <string name="export_empty">No captions to export yet.</string>
+    <string name="export_failed">Export failed: %1$s</string>
+    <string name="transcript_title">LiveBuddy captions</string>
+    <string name="transcript_started_at">Started: %1$s</string>
+    <string name="transcript_exported_at">Exported: %1$s</string>
+    <string name="transcript_label_original">Original</string>
+    <string name="transcript_label_translation">Translation</string>
+    <string name="transcript_line">[%1$s] %2$s: %3$s</string>
 
     <!-- Settings -->
     <string name="section_connection">CONNECTION</string>

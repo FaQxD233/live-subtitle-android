@@ -27,6 +27,9 @@ import com.faqxd.livesub.android.audio.AudioCapture
 import com.faqxd.livesub.android.audio.AudioPlayer
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.gemini.GeminiClient
+import com.faqxd.livesub.android.transcript.TranscriptExporter
+import com.faqxd.livesub.android.transcript.TranscriptRecorder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,6 +66,10 @@ class LiveTranslateService : Service() {
     private val notificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
+
+    // Caption history of this service run for export. Survives pipeline
+    // restarts and "Clear"; dropped when the service is destroyed.
+    private val transcript = TranscriptRecorder()
 
     // Auto-reconnect state for unexpected WebSocket disconnects.
     private var reconnectJob: Job? = null
@@ -173,6 +180,33 @@ class LiveTranslateService : Service() {
         overlay?.applyStyle()
     }
 
+    /**
+     * Export everything recorded during this service run (original and
+     * translation, time-stamped) as a text file via the share sheet.
+     */
+    private fun exportTranscript() {
+        val lines = transcript.snapshot()
+        if (lines.isEmpty()) {
+            Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val exportedAt = System.currentTimeMillis()
+        val text = TranscriptExporter.format(this, lines, transcript.startedAt, exportedAt)
+        scope.launch {
+            try {
+                TranscriptExporter.share(this@LiveTranslateService, text, exportedAt)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "transcript export failed", e)
+                Toast.makeText(
+                    this@LiveTranslateService,
+                    getString(R.string.export_failed, e.message ?: e.javaClass.simpleName),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopPipeline()
@@ -241,6 +275,8 @@ class LiveTranslateService : Service() {
 
         // Gemini client
         val sessionId = ++currentSessionId
+        // Text from the new session starts new transcript lines.
+        transcript.breakLines()
         pendingCaptureResultCode = resultCode
         pendingCaptureResultData = resultData
 
@@ -463,6 +499,9 @@ class LiveTranslateService : Service() {
                     override fun onToggleOriginalClicked() {
                         toggleShowOriginal()
                     }
+                    override fun onExportClicked() {
+                        exportTranscript()
+                    }
                     override fun onClickThroughChanged(enabled: Boolean) {
                         // Re-post so the "exit click-through" action follows the mode.
                         updateNotification(running)
@@ -553,12 +592,18 @@ class LiveTranslateService : Service() {
     private fun createClientListener(sessionId: Int) = object : GeminiClient.Listener {
         override fun onInputTranscript(text: String) {
             scope.launch {
-                if (isCurrentSession(sessionId)) overlay?.setInput(text)
+                if (isCurrentSession(sessionId)) {
+                    overlay?.setInput(text)
+                    transcript.append(TranscriptRecorder.Stream.ORIGINAL, text)
+                }
             }
         }
         override fun onOutputTranscript(text: String) {
             scope.launch {
-                if (isCurrentSession(sessionId)) overlay?.setOutput(text)
+                if (isCurrentSession(sessionId)) {
+                    overlay?.setOutput(text)
+                    transcript.append(TranscriptRecorder.Stream.TRANSLATION, text)
+                }
             }
         }
         override fun onAudioChunk(pcm16: ByteArray) {

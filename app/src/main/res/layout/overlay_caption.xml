@@ -220,6 +220,19 @@
                 android:src="@drawable/ic_overlay_lock"
                 android:tint="@color/hud_text_primary" />
 
+            <!-- Export the caption transcript of this run via the share sheet. -->
+            <ImageButton
+                android:id="@+id/overlayExportBtn"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/overlay_btn_secondary"
+                android:contentDescription="@string/overlay_export"
+                android:padding="6dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_overlay_export"
+                android:tint="@color/hud_text_primary" />
+
             <ImageButton
                 android:id="@+id/overlaySettingsBtn"
                 android:layout_width="30dp"
