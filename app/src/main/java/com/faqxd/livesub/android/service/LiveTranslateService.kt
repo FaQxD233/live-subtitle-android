@@ -83,6 +83,10 @@ class LiveTranslateService : Service() {
     // sooner does not, so a server that kills sessions right after setup
     // can't keep us reconnecting forever.
     @Volatile private var connectedAtMs = 0L
+    // Latest resumable-session handle issued by the server. Kept across
+    // reconnects / deliberate restarts so the session context continues;
+    // cleared on permanent failure and explicit stop.
+    @Volatile private var resumptionHandle: String? = null
 
     // Cached MediaProjection grant from the most recent ACTION_START.
     // Reused by ACTION_RESTART so the user can change API key / language /
@@ -341,6 +345,7 @@ class LiveTranslateService : Service() {
             echoTargetLanguage = s.echoTargetLanguage,
             apiBase = s.apiBase,
             liveModel = s.liveModel,
+            resumptionHandle = resumptionHandle,
         )
 
         running = true
@@ -410,6 +415,7 @@ class LiveTranslateService : Service() {
         running = false
         pipelineRunning = false
         connectedAtMs = 0
+        resumptionHandle = null
         cancelReconnect()
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
@@ -429,6 +435,7 @@ class LiveTranslateService : Service() {
         pendingCaptureResultCode = 0
         pendingCaptureResultData = null
         connectedAtMs = 0
+        resumptionHandle = null
         if (!running && client == null && capture == null) {
             pipelineRunning = false
             cancelReconnect()
@@ -683,6 +690,32 @@ class LiveTranslateService : Service() {
                     // is stale and must not keep playing.
                     player?.flush()
                 }
+            }
+        }
+        override fun onSessionResumptionHandle(handle: String) {
+            scope.launch {
+                if (isCurrentSession(sessionId)) {
+                    resumptionHandle = handle
+                }
+            }
+        }
+        override fun onGoAway() {
+            scope.launch {
+                if (!isCurrentSession(sessionId) || !running) return@launch
+                Log.w(TAG, "goAway — swapping to a fresh session before server expiry")
+                // The connection was healthy (the server grants ~10 minutes),
+                // so reset the backoff and swap immediately. A stale handle
+                // is fine: the new setup continues the session context.
+                reconnectAttempts = 0
+                connectedAtMs = 0
+                running = false
+                pipelineRunning = false
+                currentSessionId++
+                capture?.stop(); capture = null
+                player?.stop(); player = null
+                client?.stop()
+                client = null
+                startPipelineWithCachedGrant()
             }
         }
         override fun onSetupSent() {

@@ -37,6 +37,13 @@ class GeminiClient(
         fun onAudioChunk(pcm16: ByteArray)
         /** The user interrupted the model; any queued playback is stale. */
         fun onInterrupted()
+        /**
+         * The server signaled the connection's imminent expiry (goAway).
+         * The caller should swap to a fresh session before it is killed.
+         */
+        fun onGoAway()
+        /** A resumable session handle was issued; keep it for reconnects. */
+        fun onSessionResumptionHandle(handle: String)
         /** Socket open and the setup envelope has been sent; awaiting setupComplete. */
         fun onSetupSent()
         fun onConnected()
@@ -62,6 +69,8 @@ class GeminiClient(
     private var targetLang: String = "es"
     private var echo: Boolean = true
     private var liveModel: String = AppSettings.DEFAULT_LIVE_MODEL
+    /** Handle of a resumable session to continue; null = start fresh. */
+    private var setupResumptionHandle: String? = null
 
     fun configure(
         apiKey: String,
@@ -69,12 +78,14 @@ class GeminiClient(
         echoTargetLanguage: Boolean,
         apiBase: String = DEFAULT_API_BASE,
         liveModel: String = AppSettings.DEFAULT_LIVE_MODEL,
+        resumptionHandle: String? = null,
     ) {
         this.apiKey = apiKey.trim()
         this.apiBase = apiBase.ifBlank { DEFAULT_API_BASE }.trim()
         this.targetLang = AppSettings.normalizeTargetLanguage(targetLang)
         this.echo = echoTargetLanguage
         this.liveModel = liveModel.trim().ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
+        this.setupResumptionHandle = resumptionHandle
     }
 
     /** Start a new session. No-op if already running. */
@@ -219,6 +230,12 @@ class GeminiClient(
         })
         put("inputAudioTranscription", JSONObject())
         put("outputAudioTranscription", JSONObject())
+        // Ask for resumable handles; on a reconnect the last handle is sent
+        // so the server continues the session context seamlessly.
+        put(
+            "sessionResumption",
+            setupResumptionHandle?.let { JSONObject().put("handle", it) } ?: JSONObject(),
+        )
         put("contextWindowCompression", JSONObject().apply {
             put("triggerTokens", "0")
             put("slidingWindow", JSONObject().apply { put("targetTokens", "0") })
@@ -252,6 +269,23 @@ class GeminiClient(
                 setupComplete = true
                 listener.onConnected()
             }
+            return
+        }
+
+        // Resumable session handle for future reconnects.
+        root.optJSONObject("sessionResumptionUpdate")?.let { upd ->
+            val newHandle = upd.optString("newHandle", "")
+            if (upd.optBoolean("resumable", false) && newHandle.isNotEmpty()) {
+                listener.onSessionResumptionHandle(newHandle)
+            }
+            return
+        }
+
+        // goAway — the connection is nearing its server-imposed lifetime
+        // (~10 minutes); swap to a fresh session before it is killed.
+        root.optJSONObject("goAway")?.let { goAway ->
+            Log.w(TAG, "goAway received (timeLeft=${goAway.optString("timeLeft", "?")})")
+            listener.onGoAway()
             return
         }
 
