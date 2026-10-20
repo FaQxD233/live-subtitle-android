@@ -8,7 +8,3 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -dontwarn org.conscrypt.**
-
-# org.json (standalone dependency without consumer rules)
--dontwarn org.json.**
--keep class org.json.** { *; }

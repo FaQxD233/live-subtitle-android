@@ -97,6 +97,6 @@ dependencies {
     // OkHttp WebSocket client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // JSON parsing
-    implementation("org.json:json:20240303")
+    // JSON parsing uses the org.json classes built into the Android
+    // framework; a bundled copy would be shadowed by them at runtime.
 }
