@@ -103,7 +103,7 @@ class AudioCapture(
         // to amortize the JNI/read overhead) while the AudioRecord keeps its
         // larger internal buffer.
         val readBytes = nativeRate / 25 * 2  // 40 ms of mono PCM16 at nativeRate
-        captureThread = Thread({ micLoop(ar, minBuf, readBytes) }, "AudioCapture-mic").apply {
+        captureThread = Thread({ micLoop(ar, readBytes) }, "AudioCapture-mic").apply {
             isDaemon = true
             start()
         }
@@ -186,11 +186,11 @@ class AudioCapture(
         return 48000
     }
 
-    private fun micLoop(ar: AudioRecord, bufSize: Int, readBytes: Int) {
+    private fun micLoop(ar: AudioRecord, readBytes: Int) {
         // Capture at native rate (e.g. 48 kHz), then downsample to 16 kHz
         // before forwarding. Same pipeline as the system-audio branch.
-        // Reads use [readBytes] (40 ms) for latency; [bufSize] only feeds
-        // the heartbeat log modulo below.
+        // Reads use [readBytes] (40 ms) for latency while the AudioRecord
+        // keeps its larger internal buffer.
         val buf = ByteArray(readBytes)
         val floats = FloatArray(readBytes / 2)
         val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()

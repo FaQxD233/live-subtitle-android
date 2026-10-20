@@ -86,15 +86,6 @@ class PCM16Downsampler(private val targetRate: Int = 16000) {
         lastChannels = 0
     }
 
-    /** Convenience: decode raw Float32 little-endian bytes first. */
-    fun convertBytes(float32Le: ByteArray, srcRate: Int, channels: Int = 1): ByteArray {
-        if (float32Le.size % 4 != 0) return ByteArray(0)
-        val floats = FloatArray(float32Le.size / 4)
-        val buf = ByteBuffer.wrap(float32Le).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
-        buf.get(floats)
-        return convert(floats, srcRate, channels)
-    }
-
     private fun resampleContinuous(mono: FloatArray, srcRate: Int): FloatArray {
         val previous = tailSample
         val hasTail = previous != null

@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    ) { _ ->
         // Notifications are nice-to-have (service still runs without them on
         // older devices), so we proceed regardless.
         continueStartFlow()

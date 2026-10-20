@@ -51,7 +51,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var latestOnlyCheck: CheckBox
     private lateinit var latestCountLabel: TextView
     private lateinit var latestCountSpinner: Spinner
-    private lateinit var modelLabel: TextView
     private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
     private lateinit var cancelBtn: Button
@@ -83,7 +82,6 @@ class SettingsActivity : AppCompatActivity() {
         latestOnlyCheck = findViewById(R.id.latestOnlyCheck)
         latestCountLabel = findViewById(R.id.latestCountLabel)
         latestCountSpinner = findViewById(R.id.latestCountSpinner)
-        modelLabel = findViewById(R.id.modelLabel)
         modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
         cancelBtn = findViewById(R.id.cancelBtn)
@@ -301,7 +299,6 @@ class SettingsActivity : AppCompatActivity() {
         setLatestCountEnabled(settings.showLatestOnly)
         latestOnlyCheck.setOnCheckedChangeListener { _, checked -> setLatestCountEnabled(checked) }
         modelEdit.setText(settings.liveModel)
-        modelLabel.text = "Live Model"
     }
 
     private fun applyFromUi() {

@@ -158,7 +158,7 @@ class AudioPlayer(
                     }
                 }
                 while (written < bufSizeFrames && chunkQueue.isNotEmpty()) {
-                    val chunk = chunkQueue.peekFirst()
+                    val chunk = chunkQueue.peekFirst() ?: break
                     val available = chunk.size - headOffset
                     val toTake = minOf(available, bufSizeFrames - written)
                     System.arraycopy(chunk, headOffset, out, written, toTake)

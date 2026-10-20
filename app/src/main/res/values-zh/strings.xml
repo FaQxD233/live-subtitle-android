@@ -5,7 +5,6 @@
     <string name="settings_title">设置</string>
 
     <!-- Notification -->
-    <string name="notif_channel_id">live_translate</string>
     <string name="notif_channel_name">实时翻译</string>
     <string name="notif_title">Gemini 实时翻译</string>
     <string name="notif_text_running">翻译中… 点击打开</string>
@@ -104,7 +103,6 @@
     <!-- Permissions -->
     <string name="perm_overlay_rationale">悬浮字幕需要"显示在其他应用上层"权限。</string>
     <string name="perm_mic_rationale">需要麦克风访问权限以翻译语音。</string>
-    <string name="perm_notif_rationale">需要通知权限以保持翻译服务在前台运行。</string>
     <string name="perm_system_audio_rationale">捕获系统音频需要屏幕录制权限。不会捕获视频，仅捕获音频。</string>
 
     <!-- Errors -->

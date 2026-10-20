@@ -4,7 +4,6 @@
     <string name="settings_title">Settings</string>
 
     <!-- Notification -->
-    <string name="notif_channel_id">live_translate</string>
     <string name="notif_channel_name">Live Translate</string>
     <string name="notif_title">Gemini Live Translate</string>
     <string name="notif_text_running">Translating… tap to open</string>
@@ -103,7 +102,6 @@
     <!-- Permissions -->
     <string name="perm_overlay_rationale">Floating caption needs the "Display over other apps" permission.</string>
     <string name="perm_mic_rationale">Microphone access is required to translate speech.</string>
-    <string name="perm_notif_rationale">Notifications are required to keep the translation service running in the foreground.</string>
     <string name="perm_system_audio_rationale">Capturing system audio requires screen recording permission. No video is captured, only audio.</string>
 
     <!-- Errors -->
