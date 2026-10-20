@@ -115,12 +115,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="@string/home_language"
+                android:text="@string/pair_language"
                 android:textColor="@color/text_primary_light"
                 android:textSize="13sp" />
 
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/homeLangPicker"
+                android:id="@+id/pairLangPicker"
                 android:layout_width="match_parent"
                 android:layout_height="44dp"
                 android:layout_marginTop="6dp"
@@ -129,6 +129,14 @@
                 android:inputType="text"
                 android:paddingHorizontal="10dp"
                 android:textSize="13sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/pair_language_hint"
+                android:textColor="@color/text_secondary_light"
+                android:textSize="11sp" />
 
             <Button
                 android:id="@+id/testConnBtn"

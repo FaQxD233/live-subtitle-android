@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun applySettingsToUi() {
         langBadge.text = settings.directionLabel()
-        // a2b/b2a coincide when the target already is the home language.
+        // The swap exists only for a two-way pair (see canToggleDirection).
         directionBtn.visibility =
             if (settings.canToggleDirection) View.VISIBLE else View.GONE
         // Only bilingual mode has a second (original) area; otherwise the

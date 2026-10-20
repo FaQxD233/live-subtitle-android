@@ -47,10 +47,10 @@ enum class CaptionMode(val key: String) {
  *                          (current sentence) instead of the full history.
  *  - latestSentenceCount — Sentences shown in latest-only mode (1..3).
  *  - liveModel           — Gemini Live model override.
- *  - homeLanguage        — The user's own language: the other end of the
- *                          direction swap (default Simplified Chinese).
- *  - liveDirection       — "a2b" means home language→target language; "b2a"
- *                          means target language→home language.
+ *  - pairLanguage        — Other language of a two-way conversation, or ""
+ *                          for one-way translation (no direction swap).
+ *  - liveDirection       — Two-way only: "a2b" outputs the target language,
+ *                          "b2a" outputs the pair language.
  */
 data class AppSettings(
     var apiKey: String = "",
@@ -66,7 +66,7 @@ data class AppSettings(
     var showLatestOnly: Boolean = false,
     var latestSentenceCount: Int = 1,
     var liveModel: String = DEFAULT_LIVE_MODEL,
-    var homeLanguage: String = SIMPLIFIED_CHINESE,
+    var pairLanguage: String = "",
     var liveDirection: String = "a2b",
     // Persisted overlay geometry in WindowManager px; MIN_VALUE = unset.
     var overlayX: Int = Int.MIN_VALUE,
@@ -77,23 +77,22 @@ data class AppSettings(
     val normalizedTargetLanguage: String
         get() = normalizeTargetLanguage(targetLanguage)
 
-    val normalizedHomeLanguage: String
-        get() = normalizeTargetLanguage(homeLanguage)
+    /** The two-way pair language, or null for one-way translation. */
+    val normalizedPairLanguage: String?
+        get() = pairLanguage.takeIf { it.isNotBlank() }?.let { normalizeTargetLanguage(it) }
 
     /** The language the model translates into for the current direction. */
     val effectiveTargetLanguage: String
-        get() = if (liveDirection == "b2a" && canToggleDirection) {
-            normalizedHomeLanguage
-        } else {
-            normalizedTargetLanguage
-        }
+        get() = normalizedPairLanguage
+            ?.takeIf { liveDirection == "b2a" && canToggleDirection }
+            ?: normalizedTargetLanguage
 
     /**
-     * Whether a direction toggle makes sense: when the target already is
-     * the home language, a2b and b2a coincide and the swap button hides.
+     * Whether the direction swap exists: only for a two-way pair of two
+     * different languages. One-way translation just has an output language.
      */
     val canToggleDirection: Boolean
-        get() = normalizedTargetLanguage != normalizedHomeLanguage
+        get() = normalizedPairLanguage.let { it != null && it != normalizedTargetLanguage }
 
     /** Flip Live direction (a2b ↔ b2a) in place. */
     fun toggleDirection() {
@@ -102,14 +101,15 @@ data class AppSettings(
 
     /**
      * Human-readable direction badge shared by the main screen, the overlay
-     * and the minimized pill: "中 → EN" (or reversed) for home → target, or
-     * just "→ 中" when the target is the home language, whatever the source.
+     * and the minimized pill: "中 → EN" (or reversed) for a two-way pair,
+     * or just "→ EN" for one-way translation, whatever the source.
      */
     fun directionLabel(): String {
         val targetName = Languages.shortNameFor(normalizedTargetLanguage)
-        if (!canToggleDirection) return "→ $targetName"
-        val homeName = Languages.shortNameFor(normalizedHomeLanguage)
-        return if (liveDirection == "b2a") "$targetName → $homeName" else "$homeName → $targetName"
+        val pair = normalizedPairLanguage
+        if (pair == null || !canToggleDirection) return "→ $targetName"
+        val pairName = Languages.shortNameFor(pair)
+        return if (liveDirection == "b2a") "$targetName → $pairName" else "$pairName → $targetName"
     }
 
     companion object {
@@ -174,9 +174,13 @@ data class AppSettings(
                 latestSentenceCount = prefs.getInt("latest_sentence_count", 1)
                     .coerceIn(1, MAX_LATEST_SENTENCES),
                 liveModel = liveModel,
-                homeLanguage = normalizeTargetLanguage(
-                    prefs.getString("home_language", SIMPLIFIED_CHINESE) ?: SIMPLIFIED_CHINESE
-                ),
+                // One-way unless a pair language is set. Before this setting
+                // existed a target other than Simplified Chinese was always
+                // swappable with it; saved setups keep that pair.
+                pairLanguage = prefs.getString("pair_language", null)
+                    ?: if (prefs.contains("target_language") &&
+                        normalizeTargetLanguage(migratedTargetLanguage) != SIMPLIFIED_CHINESE
+                    ) SIMPLIFIED_CHINESE else "",
                 liveDirection = normalizeDirection(rawDirection),
                 overlayX = prefs.getInt("overlay_x", Int.MIN_VALUE),
                 overlayY = prefs.getInt("overlay_y", Int.MIN_VALUE),
@@ -255,7 +259,7 @@ data class AppSettings(
             putBoolean("latest_only", showLatestOnly)
             putInt("latest_sentence_count", latestSentenceCount.coerceIn(1, MAX_LATEST_SENTENCES))
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
-            putString("home_language", normalizeTargetLanguage(homeLanguage))
+            putString("pair_language", normalizedPairLanguage ?: "")
             putString("live_direction", normalizeDirection(liveDirection))
             putString("mode", "live")
             remove("bili_model")

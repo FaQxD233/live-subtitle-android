@@ -78,7 +78,9 @@
     <string name="audio_source_mic">Microphone</string>
     <string name="audio_source_system">System audio (loopback)</string>
     <string name="translate_to">Translate to</string>
-    <string name="home_language">My language (the other end of Swap Direction)</string>
+    <string name="pair_language">Two-way conversation: other language</string>
+    <string name="pair_language_none">Not used (one-way)</string>
+    <string name="pair_language_hint">Set it to switch the output between the two languages with ⇄ on the overlay and the main screen.</string>
     <string name="language_search_hint">Search language…</string>
     <string name="test_connection">Test connection</string>
     <string name="testing_connection">Testing…</string>

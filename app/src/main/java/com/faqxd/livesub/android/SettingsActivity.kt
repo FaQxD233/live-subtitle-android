@@ -34,13 +34,13 @@ class SettingsActivity : AppCompatActivity() {
 
     /** Languages picked in the pickers but not yet saved; null = unchanged. */
     private var pickedLanguage: String? = null
-    private var pickedHomeLanguage: String? = null
+    private var pickedPairLanguage: String? = null
 
     private lateinit var apiKeyEdit: EditText
     private lateinit var showKeyBtn: Button
     private lateinit var apiBaseEdit: EditText
     private lateinit var langPicker: MaterialAutoCompleteTextView
-    private lateinit var homeLangPicker: MaterialAutoCompleteTextView
+    private lateinit var pairLangPicker: MaterialAutoCompleteTextView
     private lateinit var sourceSpinner: Spinner
     private lateinit var volumeSlider: SeekBar
     private lateinit var echoCheck: CheckBox
@@ -72,7 +72,7 @@ class SettingsActivity : AppCompatActivity() {
         showKeyBtn = findViewById(R.id.showKeyBtn)
         apiBaseEdit = findViewById(R.id.apiBaseEdit)
         langPicker = findViewById(R.id.langPicker)
-        homeLangPicker = findViewById(R.id.homeLangPicker)
+        pairLangPicker = findViewById(R.id.pairLangPicker)
         sourceSpinner = findViewById(R.id.sourceSpinner)
         volumeSlider = findViewById(R.id.volumeSlider)
         echoCheck = findViewById(R.id.echoCheck)
@@ -201,16 +201,21 @@ class SettingsActivity : AppCompatActivity() {
      * (the filter is reset to empty); typing filters by name or code — the
      * code is embedded in each row so "pt-BR" finds Portuguese (Brazil).
      * [current] gives the code whose name the field shows; [onPicked]
-     * receives a chosen code.
+     * receives a chosen code. With [noneLabel] the list starts with that
+     * row, which picks "" (no language).
      */
     private fun setupLanguagePicker(
         picker: MaterialAutoCompleteTextView,
         current: () -> String,
+        noneLabel: String? = null,
         onPicked: (String) -> Unit,
     ) {
-        val adapter = LanguageAdapter(this, Languages.ALL.map { "${it.name}  (${it.code})" })
+        val rows = Languages.ALL.map { "${it.name}  (${it.code})" }
+        val adapter = LanguageAdapter(this, if (noneLabel != null) listOf(noneLabel) + rows else rows)
+        fun label(code: String): String =
+            if (code.isEmpty() && noneLabel != null) noneLabel else Languages.nameFor(code)
         picker.setAdapter(adapter)
-        picker.setText(Languages.nameFor(current()), false)
+        picker.setText(label(current()), false)
         // Tap = open the full list; free typing filters as usual. The first
         // tap on an unfocused editable only grants focus (and opens the
         // IME) without firing onClick, so focus opens the list as well.
@@ -220,14 +225,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         picker.setOnClickListener { adapter.filter.filter("", showFullList) }
         // Leaving without picking restores the current selection label.
-        picker.setOnDismissListener { picker.setText(Languages.nameFor(current()), false) }
+        picker.setOnDismissListener { picker.setText(label(current()), false) }
         picker.setOnItemClickListener { _, _, position, _ ->
             val item = picker.adapter.getItem(position) as? String ?: return@setOnItemClickListener
-            val code = item.substringAfterLast('(').removeSuffix(")").trim()
-            if (Languages.ALL.any { it.code == code }) {
-                onPicked(code)
-                picker.setText(Languages.nameFor(code), false)
+            val code = if (item == noneLabel) {
+                ""
+            } else {
+                item.substringAfterLast('(').removeSuffix(")").trim()
+                    .takeIf { c -> Languages.ALL.any { it.code == c } }
+                    ?: return@setOnItemClickListener
             }
+            onPicked(code)
+            picker.setText(label(code), false)
         }
     }
 
@@ -239,8 +248,12 @@ class SettingsActivity : AppCompatActivity() {
         setupLanguagePicker(langPicker, { pickedLanguage ?: settings.targetLanguage }) {
             pickedLanguage = it
         }
-        setupLanguagePicker(homeLangPicker, { pickedHomeLanguage ?: settings.homeLanguage }) {
-            pickedHomeLanguage = it
+        setupLanguagePicker(
+            pairLangPicker,
+            { pickedPairLanguage ?: settings.pairLanguage },
+            noneLabel = getString(R.string.pair_language_none),
+        ) {
+            pickedPairLanguage = it
         }
 
         // Loopback capture exists only on Android 10+; don't offer it on
@@ -297,7 +310,10 @@ class SettingsActivity : AppCompatActivity() {
         // targetLanguage only changes when a picker row was selected;
         // free-typed text that matches nothing is ignored.
         pickedLanguage?.let { settings.targetLanguage = it }
-        pickedHomeLanguage?.let { settings.homeLanguage = it }
+        pickedPairLanguage?.let { settings.pairLanguage = it }
+        // Without a two-way pair there is no direction; start a new pair
+        // from its first direction (output = target language).
+        if (!settings.canToggleDirection) settings.liveDirection = "a2b"
         settings.audioSource = if (sourceSpinner.selectedItemPosition == 1) "system" else "mic"
         settings.playbackVolume = volumeSlider.progress / 100f
         settings.playTranslation = echoCheck.isChecked

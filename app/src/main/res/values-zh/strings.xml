@@ -79,7 +79,9 @@
     <string name="audio_source_mic">麦克风</string>
     <string name="audio_source_system">系统音频（回环）</string>
     <string name="translate_to">翻译到</string>
-    <string name="home_language">我的语言（切换方向时的另一端）</string>
+    <string name="pair_language">双向对话的另一种语言</string>
+    <string name="pair_language_none">不使用（单向翻译）</string>
+    <string name="pair_language_hint">设置后，可在悬浮窗和主界面用 ⇄ 在两种语言之间切换输出。</string>
     <string name="language_search_hint">搜索语言…</string>
     <string name="test_connection">测试连接</string>
     <string name="testing_connection">测试中…</string>
