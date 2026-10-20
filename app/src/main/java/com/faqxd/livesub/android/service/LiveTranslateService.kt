@@ -35,8 +35,7 @@ import com.faqxd.livesub.android.gemini.GeminiClient
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.transcript.TranscriptExporter
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
-import java.io.File
-import kotlinx.coroutines.CancellationException
+import com.faqxd.livesub.android.transcript.TranscriptStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,15 +74,9 @@ class LiveTranslateService : Service() {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
-    // Caption history for export. Survives pipeline restarts, "Clear" and
-    // process death (persisted to disk, see [persistTranscript]).
-    private val transcriptPersistExecutor =
-        java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "transcript-persist").apply { isDaemon = true }
-        }
-    private val transcript = TranscriptRecorder().also {
-        it.setPersistHook { lines, startedAt -> persistTranscript(lines, startedAt) }
-    }
+    // Captions are recorded into the process-wide [TranscriptStore] (one
+    // session per service run); it survives "Clear", restarts and process
+    // death, and the main screen can export or clear it.
 
     // Auto-reconnect state for unexpected WebSocket disconnects.
     private var reconnectJob: Job? = null
@@ -151,71 +144,8 @@ class LiveTranslateService : Service() {
         // field reference (see [prefsListener]).
         AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
         registerNetworkCallback()
-        restoreTranscript()
-    }
-
-    // ---------- transcript persistence ----------
-
-    private val transcriptFile: File get() = File(filesDir, "transcript.json")
-
-    /**
-     * Write the full snapshot (JSON array; the first element carries the
-     * session start time) to disk on the persist thread — atomic-ish via
-     * a temp file rename so a crash never truncates the good file.
-     */
-    private fun persistTranscript(lines: List<TranscriptRecorder.Line>, startedAt: Long) {
-        if (transcriptPersistExecutor.isShutdown) return
-        transcriptPersistExecutor.execute {
-            try {
-                val arr = org.json.JSONArray()
-                arr.put(org.json.JSONObject().put("session_started_at", startedAt))
-                for (line in lines) {
-                    arr.put(
-                        org.json.JSONObject()
-                            .put("stream", line.stream.name)
-                            .put("started_at", line.startedAt)
-                            .put("text", line.text)
-                    )
-                }
-                val tmp = File(filesDir, "transcript.json.tmp")
-                tmp.writeText(arr.toString())
-                java.nio.file.Files.move(
-                    tmp.toPath(),
-                    transcriptFile.toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "transcript persist failed: ${e.message}")
-            }
-        }
-    }
-
-    /** Load the previous run's lines so the next export still has them. */
-    private fun restoreTranscript() {
-        if (!transcriptFile.exists()) return
-        try {
-            val arr = org.json.JSONArray(transcriptFile.readText())
-            val restored = ArrayList<TranscriptRecorder.Line>()
-            var startedAt = 0L
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                if (o.has("session_started_at")) {
-                    startedAt = o.optLong("session_started_at", 0L)
-                    continue
-                }
-                restored.add(
-                    TranscriptRecorder.Line(
-                        TranscriptRecorder.Stream.valueOf(o.getString("stream")),
-                        o.getLong("started_at"),
-                        o.getString("text"),
-                    )
-                )
-            }
-            transcript.restore(restored, startedAt)
-            Log.i(TAG, "restored ${restored.size} transcript lines from disk")
-        } catch (e: Exception) {
-            Log.w(TAG, "transcript restore failed: ${e.message}")
-        }
+        // Captions of this run are exported under one session header.
+        TranscriptStore.startSession()
     }
 
     /**
@@ -373,30 +303,11 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Export everything recorded during this service run (original and
-     * translation, time-stamped) as a text file via the share sheet.
+     * Export the caption history (original and translation, time-stamped,
+     * grouped by session) as a text file via the share sheet.
      */
     private fun exportTranscript() {
-        val lines = transcript.snapshot()
-        if (lines.isEmpty()) {
-            Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
-            return
-        }
-        val exportedAt = System.currentTimeMillis()
-        val text = TranscriptExporter.format(this, lines, transcript.startedAt, exportedAt)
-        scope.launch {
-            try {
-                TranscriptExporter.share(this@LiveTranslateService, text, exportedAt)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Log.e(TAG, "transcript export failed", e)
-                Toast.makeText(
-                    this@LiveTranslateService,
-                    getString(R.string.export_failed, e.message ?: e.javaClass.simpleName),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
+        scope.launch { TranscriptExporter.shareHistory(this@LiveTranslateService) }
     }
 
     override fun onDestroy() {
@@ -415,9 +326,8 @@ class LiveTranslateService : Service() {
         // stopPipeline() re-posts the status notification after the system
         // already dropped the foreground one; don't leave it behind.
         notificationManager.cancel(NOTIF_ID)
-        // Flush the transcript snapshot, then let the persist thread finish.
-        transcript.flushPersist()
-        transcriptPersistExecutor.shutdown()
+        // Finish (and persist) the lines still in progress.
+        TranscriptStore.endSession()
         scope.coroutineContext[Job]?.cancel()
     }
 
@@ -488,7 +398,7 @@ class LiveTranslateService : Service() {
     private fun startSession(s: AppSettings) {
         val sessionId = ++currentSessionId
         // Text from the new session starts new transcript lines.
-        transcript.breakLines()
+        TranscriptStore.breakLines()
         val c = GeminiClient(listener = createClientListener(sessionId)).also { client = it }
         c.configure(
             apiKey = s.apiKey,
@@ -871,7 +781,7 @@ class LiveTranslateService : Service() {
             scope.launch {
                 if (isCurrentSession(sessionId)) {
                     overlay?.setInput(text)
-                    transcript.append(TranscriptRecorder.Stream.ORIGINAL, text)
+                    TranscriptStore.append(TranscriptRecorder.Stream.ORIGINAL, text)
                     publishState()
                 }
             }
@@ -880,7 +790,7 @@ class LiveTranslateService : Service() {
             scope.launch {
                 if (isCurrentSession(sessionId)) {
                     overlay?.setOutput(text)
-                    transcript.append(TranscriptRecorder.Stream.TRANSLATION, text)
+                    TranscriptStore.append(TranscriptRecorder.Stream.TRANSLATION, text)
                     publishState()
                 }
             }

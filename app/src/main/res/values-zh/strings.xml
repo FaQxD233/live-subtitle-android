@@ -56,8 +56,12 @@
     <string name="export_empty">还没有可导出的字幕。</string>
     <string name="export_failed">导出失败：%1$s</string>
     <string name="transcript_title">LiveBuddy 字幕记录</string>
-    <string name="transcript_started_at">开始时间：%1$s</string>
     <string name="transcript_exported_at">导出时间：%1$s</string>
+    <string name="transcript_session">—— 会话开始：%1$s ——</string>
+    <string name="clear_history">清空记录</string>
+    <string name="clear_history_confirm">删除全部字幕记录？此操作无法撤销。</string>
+    <string name="clear_history_done">字幕记录已清空。</string>
+    <string name="delete">删除</string>
     <string name="transcript_label_original">原文</string>
     <string name="transcript_label_translation">译文</string>
     <string name="transcript_line">[%1$s] %2$s：%3$s</string>

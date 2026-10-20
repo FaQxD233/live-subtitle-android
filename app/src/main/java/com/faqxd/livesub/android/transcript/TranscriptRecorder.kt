@@ -1,14 +1,17 @@
 package com.faqxd.livesub.android.transcript
 
 /**
- * Full caption history of one service run, kept so it can be exported.
+ * Caption history (original and translation), kept across service runs so
+ * it can be exported.
  *
- * Original and translated segments are recorded separately and grouped
- * into lines: a pause longer than [PAUSE_GAP_MS] within a stream starts a
- * new line. The Live API streams transcription as deltas that carry their
- * own leading spaces (verified 2026-10-20 against the translate model), so
- * segments are appended verbatim. Not thread-safe; call it from the main
- * thread only.
+ * Segments are grouped into lines per stream: a pause longer than
+ * [PAUSE_GAP_MS], a line running longer than [MAX_LINE_MS], or a new Live
+ * session starts a new line. The Live API streams transcription as deltas
+ * that carry their own leading spaces (verified 2026-10-20 against the
+ * translate model), so segments are appended verbatim. Each service run is
+ * a session whose start is recorded once its first line is. Entries that
+ * became final (session starts, closed lines) are handed to [onEntry] in
+ * that order, for persistence. Not thread-safe; main thread only.
  */
 class TranscriptRecorder(
     private val clock: () -> Long = System::currentTimeMillis,
@@ -16,80 +19,110 @@ class TranscriptRecorder(
 
     enum class Stream { ORIGINAL, TRANSLATION }
 
-    data class Line(val stream: Stream, val startedAt: Long, val text: String)
+    sealed interface Entry {
+        /** Wall-clock time the entry started at. */
+        val at: Long
+    }
 
-    /** Wall-clock time of the first recorded segment, or 0 if none. */
-    var startedAt = 0L
-        private set
+    /** A service run that started at [at]. */
+    data class Session(override val at: Long) : Entry
 
-    private val lines = ArrayList<Line>()
+    /** One caption line of [stream] that started at [at]. */
+    data class Line(val stream: Stream, override val at: Long, val text: String) : Entry
+
+    /** Sink for entries that became final. */
+    var onEntry: ((Entry) -> Unit)? = null
+
+    private val entries = ArrayList<Entry>()
     private val tracks = Stream.values().associateWith { Track(it) }
+    private var sessionActive = false
+    // Start of the current session; recorded together with its first line,
+    // so a run without captions leaves no empty header behind.
+    private var pendingSessionAt = 0L
 
-    // --- persistence (lets an export survive process death) ---
-    private var persistHook: ((List<Line>, Long) -> Unit)? = null
-    private var lastPersistAt = 0L
-
-    /** Register a sink for throttled full snapshots; call before appends. */
-    fun setPersistHook(hook: ((List<Line>, Long) -> Unit)?) {
-        persistHook = hook
-    }
-
-    /** Restore previously persisted lines (oldest first). */
-    fun restore(restored: List<Line>, restoredStartedAt: Long) {
+    /** Put previously persisted entries (oldest first) before the current ones. */
+    fun restore(restored: List<Entry>) {
         if (restored.isEmpty()) return
-        lines.clear()
-        lines.addAll(restored.takeLast(MAX_LINES))
-        if (startedAt == 0L && restoredStartedAt > 0) startedAt = restoredStartedAt
+        entries.addAll(0, restored)
+        trim()
     }
 
-    /** Force a persist, e.g. right before the service goes away. */
-    fun flushPersist() = maybePersist(force = true)
+    /** A service run begins; its lines are exported under a session header. */
+    fun startSession() {
+        breakLines()
+        sessionActive = true
+        pendingSessionAt = clock()
+    }
 
-    private fun maybePersist(force: Boolean = false) {
-        val hook = persistHook ?: return
-        val now = clock()
-        if (!force && now - lastPersistAt < PERSIST_INTERVAL_MS) return
-        lastPersistAt = now
-        hook(snapshot(), startedAt)
+    /** The service run ends: finish the lines in progress. */
+    fun endSession() {
+        breakLines()
+        sessionActive = false
+        pendingSessionAt = 0L
     }
 
     /** Record one transcription segment for [stream]. */
     fun append(stream: Stream, segment: String) {
         if (segment.isEmpty()) return
         val now = clock()
-        if (startedAt == 0L) startedAt = now
         val track = tracks.getValue(stream)
-        if (!track.isEmpty && now - track.lastAt > PAUSE_GAP_MS) closeLine(track)
+        if (!track.isEmpty &&
+            (now - track.lastAt > PAUSE_GAP_MS || now - track.startedAt > MAX_LINE_MS)
+        ) {
+            closeLine(track)
+        }
         if (track.isEmpty) track.startedAt = now
         track.text.append(segment)
         track.lastAt = now
-        maybePersist()
     }
 
-    /** End the lines in progress, e.g. when a new session starts. */
+    /** End the lines in progress, e.g. when a new Live session starts. */
     fun breakLines() {
         tracks.values.forEach { closeLine(it) }
-        maybePersist(force = true)
     }
 
-    /** Every line in time order, including the ones still being written. */
-    fun snapshot(): List<Line> {
+    /** Forget everything; a running session continues under a new header. */
+    fun clear() {
+        entries.clear()
+        tracks.values.forEach { it.reset() }
+        pendingSessionAt = if (sessionActive) clock() else 0L
+    }
+
+    /** Every entry in time order, including the lines still being written. */
+    fun snapshot(): List<Entry> {
         val open = tracks.values
             .filterNot { it.isEmpty }
             .map { Line(it.stream, it.startedAt, it.text.toString().trim()) }
-        return (lines + open)
             .filter { it.text.isNotEmpty() }
-            .sortedBy { it.startedAt }
+        val header = if (open.isNotEmpty() && pendingSessionAt > 0) {
+            listOf(Session(pendingSessionAt))
+        } else {
+            emptyList()
+        }
+        return (entries + header + open).sortedBy { it.at }
     }
 
     private fun closeLine(track: Track) {
         if (track.isEmpty) return
         val text = track.text.toString().trim()
-        if (text.isNotEmpty()) {
-            lines.add(Line(track.stream, track.startedAt, text))
-            if (lines.size > MAX_LINES) lines.subList(0, lines.size - MAX_LINES).clear()
+        val startedAt = track.startedAt
+        track.reset()
+        if (text.isEmpty()) return
+        if (pendingSessionAt > 0) {
+            record(Session(pendingSessionAt))
+            pendingSessionAt = 0L
         }
-        track.text.setLength(0)
+        record(Line(track.stream, startedAt, text))
+    }
+
+    private fun record(entry: Entry) {
+        entries.add(entry)
+        trim()
+        onEntry?.invoke(entry)
+    }
+
+    private fun trim() {
+        if (entries.size > MAX_ENTRIES) entries.subList(0, entries.size - MAX_ENTRIES).clear()
     }
 
     private class Track(val stream: Stream) {
@@ -99,14 +132,23 @@ class TranscriptRecorder(
 
         val isEmpty: Boolean
             get() = text.isEmpty()
+
+        fun reset() {
+            text.setLength(0)
+            startedAt = 0L
+            lastAt = 0L
+        }
     }
 
     companion object {
         /** A pause longer than this within a stream starts a new line. */
         const val PAUSE_GAP_MS = 2000L
-        // Safety cap for very long runs; the oldest lines are dropped first.
-        private const val MAX_LINES = 20_000
-        // Minimum spacing between full snapshot writes.
-        private const val PERSIST_INTERVAL_MS = 2000L
+        /**
+         * A line running longer than this is closed even without a pause,
+         * so a long monologue is timestamped and persisted in pieces.
+         */
+        const val MAX_LINE_MS = 30_000L
+        /** Safety cap for the whole history; the oldest entries go first. */
+        const val MAX_ENTRIES = 20_000
     }
 }

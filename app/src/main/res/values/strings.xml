@@ -55,8 +55,12 @@
     <string name="export_empty">No captions to export yet.</string>
     <string name="export_failed">Export failed: %1$s</string>
     <string name="transcript_title">LiveBuddy captions</string>
-    <string name="transcript_started_at">Started: %1$s</string>
     <string name="transcript_exported_at">Exported: %1$s</string>
+    <string name="transcript_session">—— Session started: %1$s ——</string>
+    <string name="clear_history">Clear history</string>
+    <string name="clear_history_confirm">Delete all recorded captions? This can\'t be undone.</string>
+    <string name="clear_history_done">Caption history cleared.</string>
+    <string name="delete">Delete</string>
     <string name="transcript_label_original">Original</string>
     <string name="transcript_label_translation">Translation</string>
     <string name="transcript_line">[%1$s] %2$s: %3$s</string>
