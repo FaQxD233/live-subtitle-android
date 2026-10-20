@@ -1020,7 +1020,7 @@ class LiveTranslateService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_caption_bubble)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(
                 contentText ?: if (running) getString(R.string.notif_text_running)
