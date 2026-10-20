@@ -1007,6 +1007,12 @@ class LiveTranslateService : Service() {
             Intent(this, LiveTranslateService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        // Pause / resume without reaching for the HUD (same as its toggle).
+        val toggleIntent = PendingIntent.getService(
+            this, 3,
+            Intent(this, LiveTranslateService::class.java).setAction(ACTION_TOGGLE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_caption_bubble)
             .setContentTitle(getString(R.string.notif_title))
@@ -1017,6 +1023,7 @@ class LiveTranslateService : Service() {
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setPriority(priority)
+            .addAction(0, getString(if (running) R.string.pause else R.string.start), toggleIntent)
             .addAction(0, getString(R.string.stop), stopIntent)
         // Fallback exit from click-through, next to the on-screen unlock button.
         if (overlay?.isClickThrough == true) {

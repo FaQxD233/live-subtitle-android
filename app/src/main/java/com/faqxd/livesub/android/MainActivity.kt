@@ -138,6 +138,25 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.clearHistoryBtn).setOnClickListener { confirmClearHistory() }
 
         applySettingsToUi()
+        // A recreated activity (rotation, process restore) must not start again.
+        if (savedInstanceState == null) handleAutoStart(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAutoStart(intent)
+    }
+
+    /**
+     * The quick settings tile opens this screen with [EXTRA_AUTO_START] when
+     * starting needs the app (API key, permissions, system-audio consent):
+     * run the normal start flow once.
+     */
+    private fun handleAutoStart(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_AUTO_START, false) != true) return
+        intent.removeExtra(EXTRA_AUTO_START)
+        if (!LiveTranslateService.isPipelineRunning()) onToggleClicked()
     }
 
     override fun onStart() {
@@ -345,4 +364,8 @@ class MainActivity : AppCompatActivity() {
         hintText.text = text
     }
 
+    companion object {
+        /** Run the start flow right away (sent by the quick settings tile). */
+        const val EXTRA_AUTO_START = "com.faqxd.livesub.android.AUTO_START"
+    }
 }
