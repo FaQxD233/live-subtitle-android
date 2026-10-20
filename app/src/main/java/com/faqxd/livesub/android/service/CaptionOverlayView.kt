@@ -16,6 +16,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.transcript.SegmentMerger
@@ -487,12 +488,39 @@ class CaptionOverlayView(
      * (also covers a restored geometry after rotation / resolution change). */
     private fun keepOnScreen() {
         val metrics = context.resources.displayMetrics
-        layoutParams.width = layoutParams.width.coerceAtMost(metrics.widthPixels)
-        layoutParams.height = layoutParams.height.coerceAtMost(metrics.heightPixels)
-        val maxX = (metrics.widthPixels - layoutParams.width).coerceAtLeast(0)
-        val maxY = (metrics.heightPixels - layoutParams.height).coerceAtLeast(0)
+        // While minimized the params are WRAP_CONTENT (negative); clamp
+        // explicit sizes only and measure the pill for the position bounds.
+        if (layoutParams.width > 0) {
+            layoutParams.width = layoutParams.width.coerceAtMost(metrics.widthPixels)
+        }
+        if (layoutParams.height > 0) {
+            layoutParams.height = layoutParams.height.coerceAtMost(metrics.heightPixels)
+        }
+        val width = if (layoutParams.width > 0) layoutParams.width else rootView.width
+        val height = if (layoutParams.height > 0) layoutParams.height else rootView.height
+        val maxX = (metrics.widthPixels - width).coerceAtLeast(0)
+        val maxY = (metrics.heightPixels - height).coerceAtLeast(0)
         layoutParams.x = layoutParams.x.coerceIn(0, maxX)
         layoutParams.y = layoutParams.y.coerceIn(0, maxY)
+    }
+
+    /**
+     * The screen size changed (rotation, fold, resolution): pull the window
+     * back on screen, otherwise a HUD placed low in portrait can end up
+     * entirely off-screen in landscape, where it can't be dragged back. The
+     * clamped geometry is not persisted, so rotating back restores the
+     * user's own placement on the next start.
+     */
+    fun onScreenChanged() {
+        if (!attached) return
+        keepOnScreen()
+        updateWindowLayout()
+        if (isClickThrough) {
+            // The unlock button sits over the lock button; re-place it once
+            // the moved (and possibly narrowed) HUD has been laid out.
+            removeUnlockButton()
+            rootView.doOnPreDraw { if (isClickThrough && unlockButton == null) showUnlockButton() }
+        }
     }
 
     /**
