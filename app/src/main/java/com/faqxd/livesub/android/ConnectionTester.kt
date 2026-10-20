@@ -2,12 +2,14 @@ package com.faqxd.livesub.android
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,6 +29,16 @@ object ConnectionTester {
     fun test(apiKey: String, apiBase: String, model: String): Result {
         val latch = CountDownLatch(1)
         val result = AtomicReference<Result>(Result.Failed("timeout"))
+        // Only the first verdict counts: closing or cancelling the socket
+        // afterwards fires onClosing / onFailure, which must not turn a
+        // successful setup into a "Socket closed" failure.
+        val decided = AtomicBoolean(false)
+        fun finish(verdict: Result) {
+            if (decided.compareAndSet(false, true)) {
+                result.set(verdict)
+                latch.countDown()
+            }
+        }
         val base = apiBase.trim().trimEnd('/').let {
             when {
                 it.startsWith("https://") -> "wss://" + it.removePrefix("https://")
@@ -66,17 +78,29 @@ object ConnectionTester {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                val msg = JSONObject(text)
+                handleMessage(webSocket, text)
+            }
+
+            // Same JSON payload in a binary frame; GeminiClient accepts both.
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                handleMessage(webSocket, bytes.utf8())
+            }
+
+            private fun handleMessage(webSocket: WebSocket, text: String) {
+                // Malformed frames carry no verdict; keep waiting.
+                val msg = try {
+                    JSONObject(text)
+                } catch (_: Exception) {
+                    return
+                }
                 when {
                     msg.has("setupComplete") -> {
-                        result.set(Result.Ok)
-                        latch.countDown()
+                        finish(Result.Ok)
                         webSocket.close(1000, null)
                     }
                     msg.has("error") -> {
-                        val m = msg.getJSONObject("error").optString("message", "unknown")
-                        result.set(Result.Failed(m))
-                        latch.countDown()
+                        val m = msg.optJSONObject("error")?.optString("message", "unknown") ?: "unknown"
+                        finish(Result.Failed(m))
                         webSocket.close(1000, null)
                     }
                 }
@@ -84,21 +108,15 @@ object ConnectionTester {
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(1000, null)
-                if (result.get() is Result.Ok) {
-                    latch.countDown()
-                    return
-                }
                 val trimmed = reason.trim()
-                result.set(Result.Failed(if (trimmed.isEmpty()) "$code" else "$code $trimmed"))
-                latch.countDown()
+                finish(Result.Failed(if (trimmed.isEmpty()) "$code" else "$code $trimmed"))
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val code = response?.code
-                result.set(
+                finish(
                     Result.Failed(if (code != null) "HTTP $code" else t.message ?: t.javaClass.simpleName)
                 )
-                latch.countDown()
             }
         })
 
