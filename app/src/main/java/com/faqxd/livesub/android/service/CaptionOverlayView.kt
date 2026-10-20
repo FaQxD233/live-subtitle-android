@@ -128,6 +128,8 @@ class CaptionOverlayView(
 
     private val density: Float = context.resources.displayMetrics.density
     private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
+    /** How close to the bottom still counts as "following" new captions. */
+    private val followSlopPx: Int = (24 * density).toInt()
 
     /** Minimum overlay dimensions in pixels. The width leaves enough room
      * for the control bar (298dp fixed at the previous 300dp minimum was
@@ -288,8 +290,13 @@ class CaptionOverlayView(
         // mode only; original-only mode moves the original to the main area.
         val mode = settings.captionMode
         val showSecondary = mode == CaptionMode.BOTH
+        val secondaryWasHidden = inputScroll.visibility != View.VISIBLE
         divider.visibility = if (showSecondary) View.VISIBLE else View.GONE
         inputScroll.visibility = if (showSecondary) View.VISIBLE else View.GONE
+        // Text kept updating while hidden; open the area at the newest line.
+        if (showSecondary && secondaryWasHidden) {
+            inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
+        }
         // The control-bar button names the current mode and is highlighted
         // whenever the original is part of it.
         originalBtn.text = context.getString(
@@ -416,19 +423,28 @@ class CaptionOverlayView(
                 "—"
             }
         }
-        if (outputView.text.toString() != display) {
-            outputView.text = display
-            // Auto-scroll to bottom so the latest caption is always visible.
-            outputScroll.post { outputScroll.fullScroll(View.FOCUS_DOWN) }
-        }
+        setCaption(outputScroll, outputView, display)
     }
 
     private fun refreshInput() {
-        val text = captionText(inHistory, MAX_CAPTION_CHARS)
-        if (inputView.text.toString() != text) {
-            inputView.text = text
-            inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
-        }
+        setCaption(inputScroll, inputView, captionText(inHistory, MAX_CAPTION_CHARS))
+    }
+
+    /**
+     * Show [text] in a caption area. New lines are followed only while the
+     * area is scrolled to the bottom, so scrolling back to read the history
+     * isn't undone by every incoming segment.
+     */
+    private fun setCaption(scroll: ScrollView, view: TextView, text: String) {
+        if (view.text.toString() == text) return
+        val follow = isScrolledToBottom(scroll)
+        view.text = text
+        if (follow) scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun isScrolledToBottom(scroll: ScrollView): Boolean {
+        val content = scroll.getChildAt(0) ?: return true
+        return content.bottom - (scroll.height + scroll.scrollY) <= followSlopPx
     }
 
     /**
