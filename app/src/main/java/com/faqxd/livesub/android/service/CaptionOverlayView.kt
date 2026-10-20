@@ -404,7 +404,7 @@ class CaptionOverlayView(
     private fun updateDirectionUi(s: AppSettings) {
         langBadge.text = s.directionLabel()
         miniLabel.text = langBadge.text
-        // a2b/b2a coincide when the target already is Simplified Chinese.
+        // a2b/b2a coincide when the target already is the home language.
         directionBtn.visibility =
             if (s.canToggleDirection) View.VISIBLE else View.GONE
     }

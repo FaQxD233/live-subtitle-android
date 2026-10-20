@@ -111,6 +111,25 @@
                 android:paddingHorizontal="10dp"
                 android:textSize="13sp" />
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/home_language"
+                android:textColor="@color/text_primary_light"
+                android:textSize="13sp" />
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/homeLangPicker"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/edit_text_bg"
+                android:hint="@string/language_search_hint"
+                android:inputType="text"
+                android:paddingHorizontal="10dp"
+                android:textSize="13sp" />
+
             <Button
                 android:id="@+id/testConnBtn"
                 style="@style/Widget.Material3.Button.OutlinedButton"

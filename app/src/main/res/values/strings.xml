@@ -78,6 +78,7 @@
     <string name="audio_source_mic">Microphone</string>
     <string name="audio_source_system">System audio (loopback)</string>
     <string name="translate_to">Translate to</string>
+    <string name="home_language">My language (the other end of Swap Direction)</string>
     <string name="language_search_hint">Search language…</string>
     <string name="test_connection">Test connection</string>
     <string name="testing_connection">Testing…</string>

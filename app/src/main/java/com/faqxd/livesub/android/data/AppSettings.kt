@@ -47,8 +47,10 @@ enum class CaptionMode(val key: String) {
  *                          (current sentence) instead of the full history.
  *  - latestSentenceCount — Sentences shown in latest-only mode (1..3).
  *  - liveModel           — Gemini Live model override.
- *  - liveDirection       — "a2b" means Chinese→target language; "b2a"
- *                          means target language→Simplified Chinese.
+ *  - homeLanguage        — The user's own language: the other end of the
+ *                          direction swap (default Simplified Chinese).
+ *  - liveDirection       — "a2b" means home language→target language; "b2a"
+ *                          means target language→home language.
  */
 data class AppSettings(
     var apiKey: String = "",
@@ -64,6 +66,7 @@ data class AppSettings(
     var showLatestOnly: Boolean = false,
     var latestSentenceCount: Int = 1,
     var liveModel: String = DEFAULT_LIVE_MODEL,
+    var homeLanguage: String = SIMPLIFIED_CHINESE,
     var liveDirection: String = "a2b",
     // Persisted overlay geometry in WindowManager px; MIN_VALUE = unset.
     var overlayX: Int = Int.MIN_VALUE,
@@ -74,19 +77,23 @@ data class AppSettings(
     val normalizedTargetLanguage: String
         get() = normalizeTargetLanguage(targetLanguage)
 
+    val normalizedHomeLanguage: String
+        get() = normalizeTargetLanguage(homeLanguage)
+
+    /** The language the model translates into for the current direction. */
     val effectiveTargetLanguage: String
-        get() = if (liveDirection == "b2a" && normalizedTargetLanguage != SIMPLIFIED_CHINESE) {
-            SIMPLIFIED_CHINESE
+        get() = if (liveDirection == "b2a" && canToggleDirection) {
+            normalizedHomeLanguage
         } else {
             normalizedTargetLanguage
         }
 
     /**
      * Whether a direction toggle makes sense: when the target already is
-     * Simplified Chinese, a2b and b2a coincide and the swap button hides.
+     * the home language, a2b and b2a coincide and the swap button hides.
      */
     val canToggleDirection: Boolean
-        get() = normalizedTargetLanguage != SIMPLIFIED_CHINESE
+        get() = normalizedTargetLanguage != normalizedHomeLanguage
 
     /** Flip Live direction (a2b ↔ b2a) in place. */
     fun toggleDirection() {
@@ -95,16 +102,14 @@ data class AppSettings(
 
     /**
      * Human-readable direction badge shared by the main screen, the overlay
-     * and the minimized pill: "中 → EN" (or reversed), or just "→ 中" when
-     * the target is Simplified Chinese regardless of the source language.
+     * and the minimized pill: "中 → EN" (or reversed) for home → target, or
+     * just "→ 中" when the target is the home language, whatever the source.
      */
     fun directionLabel(): String {
-        val target = normalizedTargetLanguage
-        if (target == SIMPLIFIED_CHINESE) {
-            return "→ ${Languages.shortNameFor(target)}"
-        }
-        val targetName = Languages.shortNameFor(target)
-        return if (liveDirection == "b2a") "$targetName → 中" else "中 → $targetName"
+        val targetName = Languages.shortNameFor(normalizedTargetLanguage)
+        if (!canToggleDirection) return "→ $targetName"
+        val homeName = Languages.shortNameFor(normalizedHomeLanguage)
+        return if (liveDirection == "b2a") "$targetName → $homeName" else "$homeName → $targetName"
     }
 
     companion object {
@@ -169,6 +174,9 @@ data class AppSettings(
                 latestSentenceCount = prefs.getInt("latest_sentence_count", 1)
                     .coerceIn(1, MAX_LATEST_SENTENCES),
                 liveModel = liveModel,
+                homeLanguage = normalizeTargetLanguage(
+                    prefs.getString("home_language", SIMPLIFIED_CHINESE) ?: SIMPLIFIED_CHINESE
+                ),
                 liveDirection = normalizeDirection(rawDirection),
                 overlayX = prefs.getInt("overlay_x", Int.MIN_VALUE),
                 overlayY = prefs.getInt("overlay_y", Int.MIN_VALUE),
@@ -247,6 +255,7 @@ data class AppSettings(
             putBoolean("latest_only", showLatestOnly)
             putInt("latest_sentence_count", latestSentenceCount.coerceIn(1, MAX_LATEST_SENTENCES))
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
+            putString("home_language", normalizeTargetLanguage(homeLanguage))
             putString("live_direction", normalizeDirection(liveDirection))
             putString("mode", "live")
             remove("bili_model")
