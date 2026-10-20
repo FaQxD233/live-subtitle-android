@@ -71,6 +71,8 @@
     <string name="section_connection">CONNECTION</string>
     <string name="section_audio">AUDIO</string>
     <string name="section_appearance">APPEARANCE</string>
+    <string name="app_language">App language</string>
+    <string name="app_language_system">Follow system</string>
     <string name="section_advanced">ADVANCED</string>
     <string name="api_key_hint">Paste your Google Gemini API key</string>
     <string name="api_base_hint">API Base URL (default: Google official)</string>

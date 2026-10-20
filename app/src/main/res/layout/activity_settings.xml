@@ -214,6 +214,32 @@
         <LinearLayout style="@style/SettingsCard"
             android:orientation="vertical">
 
+            <!-- UI language: opens the per-app language setting; Android 13+ only. -->
+            <LinearLayout
+                android:id="@+id/appLanguageRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/app_language"
+                    android:textColor="@color/text_primary_light"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/appLanguageBtn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

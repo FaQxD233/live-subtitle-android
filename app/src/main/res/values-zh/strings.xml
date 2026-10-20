@@ -72,6 +72,8 @@
     <string name="section_connection">连接设置</string>
     <string name="section_audio">音频设置</string>
     <string name="section_appearance">外观设置</string>
+    <string name="app_language">界面语言</string>
+    <string name="app_language_system">跟随系统</string>
     <string name="section_advanced">高级设置</string>
     <string name="api_key_hint">粘贴你的 Google Gemini API 密钥</string>
     <string name="api_base_hint">API Base URL（默认：Google 官方）</string>

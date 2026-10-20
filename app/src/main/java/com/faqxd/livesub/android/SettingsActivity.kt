@@ -1,10 +1,14 @@
 package com.faqxd.livesub.android
 
+import android.app.LocaleManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -14,6 +18,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
@@ -313,6 +318,36 @@ class SettingsActivity : AppCompatActivity() {
         setLatestCountEnabled(settings.showLatestOnly)
         latestOnlyCheck.setOnCheckedChangeListener { _, checked -> setLatestCountEnabled(checked) }
         modelEdit.setText(settings.liveModel)
+        // UI language: Android 13+ keeps a per-app choice in its own settings
+        // page (offered languages: res/xml/locales_config.xml); older
+        // systems follow the system language.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            findViewById<View>(R.id.appLanguageRow).visibility = View.VISIBLE
+            findViewById<Button>(R.id.appLanguageBtn).apply {
+                text = appLanguageLabel()
+                setOnClickListener { openAppLanguageSettings() }
+            }
+        }
+    }
+
+    /** The per-app UI language, or "Follow system" when none is chosen. */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun appLanguageLabel(): String {
+        val locales = getSystemService(LocaleManager::class.java).applicationLocales
+        if (locales.isEmpty) return getString(R.string.app_language_system)
+        val locale = locales.get(0)
+        return locale.getDisplayName(locale)
+    }
+
+    /** The system's per-app language page; the app's details page if a ROM lacks it. */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun openAppLanguageSettings() {
+        val uri = Uri.fromParts("package", packageName, null)
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APP_LOCALE_SETTINGS, uri))
+        } catch (_: ActivityNotFoundException) {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+        }
     }
 
     private fun applyFromUi() {
