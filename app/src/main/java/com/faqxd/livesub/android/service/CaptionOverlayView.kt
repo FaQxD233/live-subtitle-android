@@ -19,6 +19,7 @@ import android.widget.TextView
 import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.transcript.latestSentences
 import kotlin.math.abs
 
@@ -33,10 +34,12 @@ import kotlin.math.abs
  *    `eventFilter` installed on `card + output_edit + input_edit`.
  *  - Can be resized from **any** of the four corner handles — mirroring
  *    `hud_window.py:_TransparentSizeGrip` (4 QSizeGrips, one per corner).
- *  - Shows: status dot + text, target-language badge, close button,
- *    translated output (primary, scrollable, **bold**), original input
- *    (secondary, scrollable, italic), control bar (Toggle / Clear /
- *    Original / Click-through / Export / Settings).
+ *  - Shows: status dot + text, target-language badge, close button, the
+ *    main caption area (primary, scrollable, **bold**: the translation,
+ *    or the original in original-only mode), the original under the
+ *    translation in bilingual mode (secondary, scrollable, italic), and a
+ *    control bar (Toggle / Clear / Caption mode / Click-through / Export /
+ *    Settings).
  *  - Can collapse into a small draggable pill ([setMinimized]); captions
  *    keep updating in the background and show up again when expanded.
  *  - Can let touches pass through to the app underneath
@@ -60,8 +63,8 @@ class CaptionOverlayView(
         fun onCloseClicked()
         /** Fired when the user taps the Live direction-swap button. */
         fun onToggleDirectionClicked()
-        /** Fired when the user taps the original-transcript toggle. */
-        fun onToggleOriginalClicked()
+        /** Fired when the user taps the caption-mode button (cycles modes). */
+        fun onCaptionModeClicked()
         /** Fired after click-through mode was switched on or off. */
         fun onClickThroughChanged(enabled: Boolean)
         /** Fired when the user taps the export button. */
@@ -176,7 +179,7 @@ class CaptionOverlayView(
 
         toggleBtn.setOnClickListener { callbacks.onToggleClicked() }
         clearBtn.setOnClickListener { callbacks.onClearClicked() }
-        originalBtn.setOnClickListener { callbacks.onToggleOriginalClicked() }
+        originalBtn.setOnClickListener { callbacks.onCaptionModeClicked() }
         clickThroughBtn.setOnClickListener { setClickThrough(true) }
         exportBtn.setOnClickListener { callbacks.onExportClicked() }
         settingsBtn.setOnClickListener { callbacks.onSettingsClicked() }
@@ -222,14 +225,16 @@ class CaptionOverlayView(
 
     fun setOutput(text: String?) {
         if (text.isNullOrEmpty()) return
-        outHistory = capHistory(outHistory + text, MAX_OUTPUT_CHARS)
+        outHistory = capHistory(outHistory + text, MAX_CAPTION_CHARS)
         refreshOutput()
     }
 
     fun setInput(text: String?) {
         if (text.isNullOrEmpty()) return
-        inHistory = capHistory(inHistory + text, MAX_INPUT_CHARS)
+        inHistory = capHistory(inHistory + text, MAX_CAPTION_CHARS)
         refreshInput()
+        // Original-only mode shows the original in the main area.
+        if (settings.captionMode == CaptionMode.ORIGINAL) refreshOutput()
     }
 
     /**
@@ -259,7 +264,7 @@ class CaptionOverlayView(
         refreshOutput()
     }
 
-    /** Re-apply fontSize / opacity / showOriginal without re-inflating. */
+    /** Re-apply fontSize / opacity / caption mode without re-inflating. */
     fun applyStyle() {
         // Output font: bold (mirrors `hud_window.py:apply_style` which sets
         // `out_f.setBold(True)`). setTypeface preserves the bold style when
@@ -276,21 +281,32 @@ class CaptionOverlayView(
 
         // Language badge + direction-swap button.
         updateDirectionUi(settings)
-        // Original visibility
-        val showOrig = settings.showOriginal
-        divider.visibility = if (showOrig) View.VISIBLE else View.GONE
-        inputScroll.visibility = if (showOrig) View.VISIBLE else View.GONE
-        // The control-bar toggle is highlighted while the original is shown.
-        originalBtn.isSelected = showOrig
+        // Caption mode: the secondary (original) area exists in bilingual
+        // mode only; original-only mode moves the original to the main area.
+        val mode = settings.captionMode
+        val showSecondary = mode == CaptionMode.BOTH
+        divider.visibility = if (showSecondary) View.VISIBLE else View.GONE
+        inputScroll.visibility = if (showSecondary) View.VISIBLE else View.GONE
+        // The control-bar button names the current mode and is highlighted
+        // whenever the original is part of it.
+        originalBtn.text = context.getString(
+            when (mode) {
+                CaptionMode.TRANSLATION -> R.string.overlay_mode_translation
+                CaptionMode.BOTH -> R.string.overlay_mode_both
+                CaptionMode.ORIGINAL -> R.string.overlay_mode_original
+            }
+        )
+        val highlighted = mode != CaptionMode.TRANSLATION
+        originalBtn.isSelected = highlighted
         originalBtn.setBackgroundResource(
-            if (showOrig) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary
+            if (highlighted) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary
         )
         // Card opacity: alpha is applied to the whole root view. Keep it
         // high enough that the drop shadow stays visible.
         val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
         rootView.alpha = alpha
         refreshStatus()
-        // showLatestOnly / showOriginal flips must re-render the captions.
+        // showLatestOnly / caption mode flips must re-render the captions.
         refreshOutput()
         refreshInput()
     }
@@ -306,7 +322,7 @@ class CaptionOverlayView(
 
     /**
      * Replace the internal settings snapshot. Call before [applyStyle] so
-     * that font size / opacity / showOriginal pick up the latest values
+     * that font size / opacity / caption mode pick up the latest values
      * without re-creating the overlay.
      */
     fun updateSettings(s: AppSettings) {
@@ -383,7 +399,8 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        val text = captionText(outHistory, MAX_OUTPUT_CHARS)
+        val history = if (settings.captionMode == CaptionMode.ORIGINAL) inHistory else outHistory
+        val text = captionText(history, MAX_CAPTION_CHARS)
         val display = text.ifEmpty {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -401,7 +418,7 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = captionText(inHistory, MAX_INPUT_CHARS)
+        val text = captionText(inHistory, MAX_CAPTION_CHARS)
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
@@ -749,10 +766,12 @@ class CaptionOverlayView(
     companion object {
         private const val TAG = "CaptionOverlay"
         private const val MAX_STATUS_CHARS = 80
-        /** Newest-kept characters of translated output history. */
-        private const val MAX_OUTPUT_CHARS = 3000
-        /** Newest-kept characters of original input history. */
-        private const val MAX_INPUT_CHARS = 1500
+        /**
+         * Newest-kept characters of each caption history. Equal for both
+         * streams, since original-only mode shows the original in the
+         * main area.
+         */
+        private const val MAX_CAPTION_CHARS = 3000
         /** Cap per shown sentence in latest-only mode (no punctuation). */
         private const val LATEST_ONLY_CHARS_PER_SENTENCE = 200
         /**

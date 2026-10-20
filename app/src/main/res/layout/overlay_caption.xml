@@ -192,17 +192,19 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
-            <!-- Quick toggle for the original (source) transcript; highlighted while shown. -->
+            <!-- Caption mode: cycles translation / both / original and names
+                 the current one; highlighted while the original is shown. -->
             <Button
                 android:id="@+id/overlayOriginalBtn"
-                android:layout_width="30dp"
+                android:layout_width="36dp"
                 android:layout_height="30dp"
                 android:background="@drawable/overlay_btn_secondary"
-                android:contentDescription="@string/overlay_original_desc"
+                android:contentDescription="@string/overlay_caption_mode_desc"
+                android:maxLines="1"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
                 android:padding="0dp"
-                android:text="@string/overlay_original"
+                android:text="@string/overlay_mode_translation"
                 android:textAllCaps="false"
                 android:textColor="@color/hud_text_primary"
                 android:textSize="10sp" />

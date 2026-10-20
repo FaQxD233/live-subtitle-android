@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
@@ -44,7 +45,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var echoSameLangCheck: CheckBox
     private lateinit var fontSlider: SeekBar
     private lateinit var opacitySlider: SeekBar
-    private lateinit var showOriginalCheck: CheckBox
+    private lateinit var captionModeSpinner: Spinner
     private lateinit var latestOnlyCheck: CheckBox
     private lateinit var latestCountLabel: TextView
     private lateinit var latestCountSpinner: Spinner
@@ -75,7 +76,7 @@ class SettingsActivity : AppCompatActivity() {
         echoSameLangCheck = findViewById(R.id.echoSameLangCheck)
         fontSlider = findViewById(R.id.fontSlider)
         opacitySlider = findViewById(R.id.opacitySlider)
-        showOriginalCheck = findViewById(R.id.showOriginalCheck)
+        captionModeSpinner = findViewById(R.id.captionModeSpinner)
         latestOnlyCheck = findViewById(R.id.latestOnlyCheck)
         latestCountLabel = findViewById(R.id.latestCountLabel)
         latestCountSpinner = findViewById(R.id.latestCountSpinner)
@@ -248,7 +249,20 @@ class SettingsActivity : AppCompatActivity() {
         // Range 14..60, so shift by 14
         fontSlider.progress = (settings.fontSize - 14).coerceIn(0, 46)
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
-        showOriginalCheck.isChecked = settings.showOriginal
+        // Entries follow CaptionMode's declaration order.
+        captionModeSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            CaptionMode.values().map { mode ->
+                getString(
+                    when (mode) {
+                        CaptionMode.TRANSLATION -> R.string.caption_mode_translation
+                        CaptionMode.BOTH -> R.string.caption_mode_both
+                        CaptionMode.ORIGINAL -> R.string.caption_mode_original
+                    }
+                )
+            },
+        )
+        captionModeSpinner.setSelection(settings.captionMode.ordinal)
         latestOnlyCheck.isChecked = settings.showLatestOnly
         latestCountSpinner.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item,
@@ -274,7 +288,7 @@ class SettingsActivity : AppCompatActivity() {
         settings.echoTargetLanguage = echoSameLangCheck.isChecked
         settings.fontSize = (fontSlider.progress + 14).coerceIn(14, 60)
         settings.bgOpacity = opacitySlider.progress / 100f
-        settings.showOriginal = showOriginalCheck.isChecked
+        settings.captionMode = CaptionMode.values()[captionModeSpinner.selectedItemPosition]
         settings.showLatestOnly = latestOnlyCheck.isChecked
         settings.latestSentenceCount = latestCountSpinner.selectedItemPosition + 1
         settings.liveModel = modelEdit.text.toString().trim()

@@ -42,8 +42,10 @@
     <string name="overlay_resize_bottom_right">调整右下角大小</string>
     <string name="overlay_minimize">最小化</string>
     <string name="overlay_expand">展开</string>
-    <string name="overlay_original">原文</string>
-    <string name="overlay_original_desc">显示原文</string>
+    <string name="overlay_mode_translation">译文</string>
+    <string name="overlay_mode_both">双语</string>
+    <string name="overlay_mode_original">原文</string>
+    <string name="overlay_caption_mode_desc">切换字幕内容：译文、双语、原文</string>
     <string name="overlay_click_through">点击穿透</string>
     <string name="overlay_click_through_off">退出点击穿透</string>
     <string name="overlay_click_through_hint">已开启点击穿透，触摸会传到下层应用。点解锁按钮或通知栏里的按钮退出。</string>
@@ -82,7 +84,10 @@
     <string name="echo_same_language">同语种输入也复述（源语言与目标相同）</string>
     <string name="font_size">字幕字体大小</string>
     <string name="bg_opacity">背景不透明度</string>
-    <string name="show_original">显示原文（源语言）</string>
+    <string name="caption_mode">字幕内容</string>
+    <string name="caption_mode_translation">仅译文</string>
+    <string name="caption_mode_both">双语（译文 + 原文）</string>
+    <string name="caption_mode_original">仅原文（源语言）</string>
     <string name="latest_only">只显示最新实时字幕（不保留历史）</string>
     <string name="latest_sentence_count">显示句数</string>
     <string name="save">保存</string>

@@ -253,7 +253,7 @@ class LiveTranslateService : Service() {
 
     /**
      * A preference was written (usually by [com.faqxd.livesub.android.SettingsActivity]).
-     * Cosmetic changes (font size, opacity, show-original, volume) apply
+     * Cosmetic changes (font size, opacity, caption mode, volume) apply
      * immediately; pipeline-affecting fields are handled separately by the
      * restart intent SettingsActivity sends, so a restart path is
      * deliberately not triggered here. Runs on the main thread.
@@ -268,6 +268,8 @@ class LiveTranslateService : Service() {
         overlay?.updateSettings(s)
         overlay?.applyStyle()
         player?.setVolume(s.playbackVolume)
+        // The caption mode decides what the main screen mirrors, too.
+        publishState()
     }
 
     // ---------- main-screen state bridge ----------
@@ -349,18 +351,20 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Show / hide the original transcript from the overlay. Starts from the
-     * latest persisted settings (like [toggleDirection]) so values changed in
-     * SettingsActivity meanwhile are never overwritten by a stale snapshot.
-     * Only the overlay style changes; the pipeline keeps running.
+     * Cycle the caption content from the overlay: translation → both →
+     * original only. Starts from the latest persisted settings (like
+     * [toggleDirection]) so values changed in SettingsActivity meanwhile are
+     * never overwritten by a stale snapshot. Only the overlay style changes;
+     * the pipeline keeps running.
      */
-    private fun toggleShowOriginal() {
+    private fun cycleCaptionMode() {
         val s = AppSettings.load(this)
-        s.showOriginal = !s.showOriginal
+        s.captionMode = s.captionMode.next()
         s.save(this)
         settings = s
         overlay?.updateSettings(s)
         overlay?.applyStyle()
+        publishState()
     }
 
     /**
@@ -700,8 +704,8 @@ class LiveTranslateService : Service() {
                     override fun onToggleDirectionClicked() {
                         toggleDirection()
                     }
-                    override fun onToggleOriginalClicked() {
-                        toggleShowOriginal()
+                    override fun onCaptionModeClicked() {
+                        cycleCaptionMode()
                     }
                     override fun onExportClicked() {
                         exportTranscript()
@@ -722,7 +726,7 @@ class LiveTranslateService : Service() {
         }
         overlay?.init()
         // Update the overlay's settings snapshot before applying style so
-        // font size / opacity / showOriginal pick up the latest values
+        // font size / opacity / caption mode pick up the latest values
         // without re-creating the overlay.
         overlay?.updateSettings(s)
         overlay?.applyStyle()

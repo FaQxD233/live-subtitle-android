@@ -5,6 +5,23 @@ import android.content.SharedPreferences
 import android.os.Build
 import androidx.core.content.edit
 
+/** What the caption areas show; persisted by [key]. */
+enum class CaptionMode(val key: String) {
+    /** Translation only. */
+    TRANSLATION("translation"),
+    /** Translation on top, original transcript below. */
+    BOTH("both"),
+    /** Original (source-language) transcript only, in the main caption style. */
+    ORIGINAL("original");
+
+    /** The mode after this one, for the overlay's cycle button. */
+    fun next(): CaptionMode = values()[(ordinal + 1) % values().size]
+
+    companion object {
+        fun fromKey(key: String?): CaptionMode? = values().firstOrNull { it.key == key }
+    }
+}
+
 /**
  * Persisted application settings.
  *
@@ -24,7 +41,8 @@ import androidx.core.content.edit
  *  - echoTargetLanguage  — Whether the model also repeats input that is
  *                          already in the target language (API field).
  *  - playbackVolume      — 0..1 playback volume.
- *  - showOriginal        — Whether to display the source-language transcript.
+ *  - captionMode         — Translation only, both, or the source-language
+ *                          transcript only ([CaptionMode]).
  *  - showLatestOnly      — Whether the overlay shows only the newest caption
  *                          (current sentence) instead of the full history.
  *  - latestSentenceCount — Sentences shown in latest-only mode (1..3).
@@ -42,7 +60,7 @@ data class AppSettings(
     var playTranslation: Boolean = false,
     var echoTargetLanguage: Boolean = false,
     var playbackVolume: Float = 0.8f,
-    var showOriginal: Boolean = false,
+    var captionMode: CaptionMode = CaptionMode.TRANSLATION,
     var showLatestOnly: Boolean = false,
     var latestSentenceCount: Int = 1,
     var liveModel: String = DEFAULT_LIVE_MODEL,
@@ -143,7 +161,10 @@ data class AppSettings(
                 playTranslation = prefs.getBoolean("echo_target", false),
                 echoTargetLanguage = prefs.getBoolean("echo_same_language", false),
                 playbackVolume = prefs.getFloat("playback_volume", 0.8f),
-                showOriginal = prefs.getBoolean("show_original", false),
+                // "show_original" (a boolean) predates the three-way mode.
+                captionMode = CaptionMode.fromKey(prefs.getString("caption_mode", null))
+                    ?: if (prefs.getBoolean("show_original", false)) CaptionMode.BOTH
+                    else CaptionMode.TRANSLATION,
                 showLatestOnly = prefs.getBoolean("latest_only", false),
                 latestSentenceCount = prefs.getInt("latest_sentence_count", 1)
                     .coerceIn(1, MAX_LATEST_SENTENCES),
@@ -221,7 +242,8 @@ data class AppSettings(
             putBoolean("echo_target", playTranslation)
             putBoolean("echo_same_language", echoTargetLanguage)
             putFloat("playback_volume", playbackVolume)
-            putBoolean("show_original", showOriginal)
+            putString("caption_mode", captionMode.key)
+            remove("show_original")
             putBoolean("latest_only", showLatestOnly)
             putInt("latest_sentence_count", latestSentenceCount.coerceIn(1, MAX_LATEST_SENTENCES))
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })

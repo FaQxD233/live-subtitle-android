@@ -17,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.service.PipelineState
@@ -162,8 +163,11 @@ class MainActivity : AppCompatActivity() {
         // a2b/b2a coincide when the target already is Simplified Chinese.
         directionBtn.visibility =
             if (settings.canToggleDirection) View.VISIBLE else View.GONE
-        // Without the original the translation takes the whole card.
-        val originalVisibility = if (settings.showOriginal) View.VISIBLE else View.GONE
+        // Only bilingual mode has a second (original) area; otherwise the
+        // main caption — the original itself in original-only mode, as on
+        // the overlay — takes the whole card.
+        val originalVisibility =
+            if (settings.captionMode == CaptionMode.BOTH) View.VISIBLE else View.GONE
         inputDivider.visibility = originalVisibility
         inputScroll.visibility = originalVisibility
         val noKeyHint = getString(R.string.err_no_api_key)

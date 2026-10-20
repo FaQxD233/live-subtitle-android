@@ -41,8 +41,10 @@
     <string name="overlay_resize_bottom_right">Resize bottom-right</string>
     <string name="overlay_minimize">Minimize</string>
     <string name="overlay_expand">Expand</string>
-    <string name="overlay_original">Orig</string>
-    <string name="overlay_original_desc">Show original transcript</string>
+    <string name="overlay_mode_translation">Trans</string>
+    <string name="overlay_mode_both">Both</string>
+    <string name="overlay_mode_original">Orig</string>
+    <string name="overlay_caption_mode_desc">Switch captions: translation, both, or original</string>
     <string name="overlay_click_through">Click-through</string>
     <string name="overlay_click_through_off">Exit click-through</string>
     <string name="overlay_click_through_hint">Click-through is on: touches now reach the app below. Tap the unlock button or the notification action to exit.</string>
@@ -81,7 +83,10 @@
     <string name="echo_same_language">Repeat input that is already in the target language</string>
     <string name="font_size">Caption font size</string>
     <string name="bg_opacity">Background opacity</string>
-    <string name="show_original">Show original (source) transcript</string>
+    <string name="caption_mode">Captions</string>
+    <string name="caption_mode_translation">Translation only</string>
+    <string name="caption_mode_both">Translation + original</string>
+    <string name="caption_mode_original">Original (source language) only</string>
     <string name="latest_only">Show only the latest caption (no history)</string>
     <string name="latest_sentence_count">Sentences shown</string>
     <string name="save">Save</string>
