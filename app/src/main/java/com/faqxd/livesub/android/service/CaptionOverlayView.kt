@@ -20,6 +20,7 @@ import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.transcript.SegmentMerger
+import com.faqxd.livesub.android.transcript.latestSentences
 import kotlin.math.abs
 
 /**
@@ -73,9 +74,6 @@ class CaptionOverlayView(
     private val outMerger = SegmentMerger()
     private var inCommitted = ""
     private val inMerger = SegmentMerger()
-    // Most recent finalized segments, shown alone in latest-only mode.
-    private var lastOutFinalized = ""
-    private var lastInFinalized = ""
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
@@ -226,7 +224,6 @@ class CaptionOverlayView(
     fun setOutput(text: String?) {
         val finalized = outMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
-            lastOutFinalized = finalized
             outCommitted = capHistory(outCommitted + finalized, MAX_OUTPUT_CHARS)
         }
         refreshOutput()
@@ -235,7 +232,6 @@ class CaptionOverlayView(
     fun setInput(text: String?) {
         val finalized = inMerger.push(text ?: "")
         if (finalized.isNotEmpty()) {
-            lastInFinalized = finalized
             inCommitted = capHistory(inCommitted + finalized, MAX_INPUT_CHARS)
         }
         refreshInput()
@@ -258,10 +254,8 @@ class CaptionOverlayView(
     fun clear() {
         outCommitted = ""
         outMerger.reset()
-        lastOutFinalized = ""
         inCommitted = ""
         inMerger.reset()
-        lastInFinalized = ""
         refreshOutput()
         refreshInput()
     }
@@ -396,15 +390,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        // Latest-only mode shows just the sentence being spoken right now:
-        // the previous finalized line stays above the streaming draft until
-        // the next one completes. A newline separates them — languages
-        // differ on inter-sentence spacing.
-        val text = if (settings.showLatestOnly) {
-            joinLatest(lastOutFinalized, outMerger.draft)
-        } else {
-            (outCommitted + outMerger.draft).trim()
-        }.let { if (it.isEmpty()) it else capHistory(it, MAX_OUTPUT_CHARS) }
+        val text = captionText(outCommitted + outMerger.draft, MAX_OUTPUT_CHARS)
         val display = text.ifEmpty {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -422,26 +408,26 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = if (settings.showLatestOnly) {
-            joinLatest(lastInFinalized, inMerger.draft)
-        } else {
-            (inCommitted + inMerger.draft).trim()
-        }.let { if (it.isEmpty()) it else capHistory(it, MAX_INPUT_CHARS) }
+        val text = captionText(inCommitted + inMerger.draft, MAX_INPUT_CHARS)
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
         }
     }
 
-    /** Latest-only text: finalized line on top, streaming draft below. */
-    private fun joinLatest(finalized: String, draft: String): String {
-        val f = finalized.trim()
-        val d = draft.trim()
-        return when {
-            f.isEmpty() -> d
-            d.isEmpty() -> f
-            else -> "$f\n$d"
-        }
+    /**
+     * Text shown for one caption stream. Latest-only mode shows just the
+     * previous sentence above the one being spoken right now, split by
+     * punctuation over the whole history (so it works no matter how the
+     * server chunks the transcription); a newline separates them because
+     * languages differ on inter-sentence spacing.
+     */
+    private fun captionText(history: String, maxChars: Int): String {
+        val full = history.trim()
+        if (!settings.showLatestOnly) return capHistory(full, maxChars)
+        val latest = latestSentences(full, LATEST_SENTENCES).joinToString("\n")
+        // A long run without punctuation must not turn into a wall of text.
+        return capHistory(latest, LATEST_ONLY_MAX_CHARS)
     }
 
     /**
@@ -773,6 +759,10 @@ class CaptionOverlayView(
         private const val MAX_OUTPUT_CHARS = 3000
         /** Newest-kept characters of original input history. */
         private const val MAX_INPUT_CHARS = 1500
+        /** Sentences shown in latest-only mode: previous + current. */
+        private const val LATEST_SENTENCES = 2
+        /** Cap for the latest-only text when punctuation never arrives. */
+        private const val LATEST_ONLY_MAX_CHARS = 200
         /**
          * Highest window opacity for which Android 12+ still lets touches
          * pass through an app overlay (the platform default maximum
