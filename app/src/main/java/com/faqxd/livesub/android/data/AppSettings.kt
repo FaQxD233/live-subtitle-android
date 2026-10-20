@@ -198,6 +198,12 @@ data class AppSettings(
         }
     }
 
+    /**
+     * Persist the user-facing settings. The overlay geometry is owned by
+     * [saveOverlayGeometry] and deliberately not written here, so a screen
+     * saving an older snapshot can't move the window back. Callers should
+     * start from a fresh [load] so other fields changed meanwhile survive.
+     */
     fun save(context: Context) {
         prefs(context).edit {
             putString("api_key", apiKey)
@@ -213,10 +219,6 @@ data class AppSettings(
             putBoolean("latest_only", showLatestOnly)
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
             putString("live_direction", normalizeDirection(liveDirection))
-            putInt("overlay_x", overlayX)
-            putInt("overlay_y", overlayY)
-            putInt("overlay_width", overlayWidth)
-            putInt("overlay_height", overlayHeight)
             putString("mode", "live")
             remove("bili_model")
             remove("bili_direction")

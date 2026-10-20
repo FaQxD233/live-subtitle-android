@@ -225,8 +225,12 @@ class MainActivity : AppCompatActivity() {
      * `translationConfig.targetLanguageCode` takes effect.
      */
     private fun onDirectionToggleClicked() {
-        settings.toggleDirection()
-        settings.save(this)
+        // Toggle the latest persisted settings rather than the onResume
+        // snapshot, so changes made meanwhile (e.g. from the overlay) stay.
+        settings = AppSettings.load(this).also {
+            it.toggleDirection()
+            it.save(this)
+        }
         applySettingsToUi()
         if (LiveTranslateService.isPipelineRunning()) {
             ContextCompat.startForegroundService(

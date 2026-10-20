@@ -101,10 +101,14 @@ class SettingsActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             apiBaseEdit.error = null
-            // Snapshot the pre-edit values so we can decide whether the
-            // running pipeline needs a hot restart (mirrors
-            // `settings_window.py:SettingsDialog` → `main.py:open_settings`).
-            val prev = settings.copy()
+            // Start from the latest persisted values, not the onCreate
+            // snapshot: fields this form doesn't edit (direction, toggled from
+            // the overlay meanwhile) must not be reverted. The same baseline
+            // decides whether the running pipeline needs a hot restart
+            // (mirrors `settings_window.py:SettingsDialog` →
+            // `main.py:open_settings`).
+            val prev = AppSettings.load(this)
+            settings = prev.copy()
             applyFromUi()
             settings.save(this)
 
@@ -114,8 +118,7 @@ class SettingsActivity : AppCompatActivity() {
                 prev.audioSource != settings.audioSource ||
                 prev.playTranslation != settings.playTranslation ||
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
-                prev.liveModel != settings.liveModel ||
-                prev.liveDirection != settings.liveDirection
+                prev.liveModel != settings.liveModel
 
             if (affectsPipeline && LiveTranslateService.isPipelineRunning()) {
                 // Forward a restart intent to the service. The service is
