@@ -156,8 +156,17 @@ class MainActivity : AppCompatActivity() {
         directionBtn.visibility =
             if (settings.canToggleDirection) View.VISIBLE else View.GONE
         inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
+        val noKeyHint = getString(R.string.err_no_api_key)
         if (settings.apiKey.isBlank()) {
-            showHint(getString(R.string.err_no_api_key))
+            showHint(noKeyHint)
+        } else if (hintText.text.toString() == noKeyHint) {
+            // The key was just saved in Settings; drop the stale prompt.
+            showHint(
+                getString(
+                    if (serviceRunning) R.string.floating_overlay_hint
+                    else R.string.floating_overlay_idle_hint
+                )
+            )
         }
     }
 
