@@ -9,8 +9,11 @@ val versionNameFromEnv: String? = System.getenv("VERSION_NAME")
 val versionCodeFromEnv: String? = System.getenv("VERSION_CODE")
 val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
 val keystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-val keyAlias: String? = System.getenv("ANDROID_KEY_ALIAS")
-val keyPassword: String? = System.getenv("ANDROID_KEY_PASSWORD")
+// Named apart from ApkSigningConfig's own properties: inside the
+// `create("release") { }` block an identical name resolves to the receiver
+// member, so `keyAlias = keyAlias` would assign the property to itself.
+val releaseKeyAlias: String? = System.getenv("ANDROID_KEY_ALIAS")
+val releaseKeyPassword: String? = System.getenv("ANDROID_KEY_PASSWORD")
 
 android {
     namespace = "com.faqxd.livesub.android"
@@ -30,14 +33,14 @@ android {
         // produce an unsigned APK, and users should use `assembleDebug`.
         if (!keystorePath.isNullOrEmpty() &&
             !keystorePassword.isNullOrEmpty() &&
-            !keyAlias.isNullOrEmpty() &&
-            !keyPassword.isNullOrEmpty()
+            !releaseKeyAlias.isNullOrEmpty() &&
+            !releaseKeyPassword.isNullOrEmpty()
         ) {
             create("release") {
                 storeFile = file(keystorePath)
                 storePassword = keystorePassword
-                keyAlias = keyAlias
-                keyPassword = keyPassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }
