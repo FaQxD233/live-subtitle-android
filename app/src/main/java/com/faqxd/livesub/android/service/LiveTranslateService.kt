@@ -98,10 +98,15 @@ class LiveTranslateService : Service() {
     @Volatile private var resumptionHandle: String? = null
 
     // Cached MediaProjection grant from the most recent ACTION_START.
-    // Reused by ACTION_RESTART so the user can change API key / language /
-    // echo / prompt without re-granting system-audio capture.
+    // Reused by every later start path (restart, toggle, reconnect, a start
+    // without a fresh consent) so the user doesn't have to re-grant
+    // system-audio capture.
     private var lastResultCode: Int = 0
     private var lastResultData: Intent? = null
+        set(value) {
+            field = value
+            projectionGrantCached = value != null
+        }
 
     // Incremented whenever a new WebSocket session starts or the current
     // pipeline is invalidated. Late callbacks from old sessions are ignored.
@@ -291,11 +296,11 @@ class LiveTranslateService : Service() {
                     lastResultCode = resultCode
                     lastResultData = resultData
                 }
-                // On Android 14+ startForeground must declare the exact
-                // service types in use. If a projection token is attached,
-                // we'll use mediaProjection; otherwise it's mic-only.
-                startForegroundIfNeeded(useSystemAudio = resultData != null)
-                startPipeline(resultCode, resultData)
+                // A start without a fresh consent (quick settings tile, or
+                // the main screen while this service still holds a live
+                // grant) reuses the cached one, like the overlay's Start.
+                cancelReconnect()
+                startPipelineWithCachedGrant()
             }
             ACTION_STOP -> shutdown()
             ACTION_TOGGLE -> togglePipeline()
@@ -637,11 +642,11 @@ class LiveTranslateService : Service() {
      * pipeline with the most recent settings, reusing the cached
      * MediaProjection grant when the user still wants system audio.
      *
-     * Every restart path — direction toggle, overlay pause/resume, settings
-     * hot-restart, auto-reconnect — funnels through here so foreground
-     * promotion and failure handling are identical: a throw from either
-     * start step permanently fails the pipeline with the reason instead of
-     * crashing the surrounding coroutine.
+     * Every start path — ACTION_START, direction toggle, overlay
+     * pause/resume, settings hot-restart, auto-reconnect — funnels through
+     * here so foreground promotion and failure handling are identical: a
+     * throw from either start step permanently fails the pipeline with the
+     * reason instead of crashing the surrounding coroutine.
      */
     private fun startPipelineWithCachedGrant() {
         val s = AppSettings.load(this)
@@ -1034,8 +1039,15 @@ class LiveTranslateService : Service() {
 
     companion object {
         @Volatile private var pipelineRunning = false
+        @Volatile private var projectionGrantCached = false
 
         fun isPipelineRunning(): Boolean = pipelineRunning
+
+        /**
+         * Whether the running service still holds a usable system-audio
+         * (MediaProjection) grant, so a new start needs no fresh consent.
+         */
+        fun hasProjectionGrant(): Boolean = projectionGrantCached
 
         private const val TAG = "LiveTranslateService"
         private const val CHANNEL_ID = "live_translate"

@@ -248,11 +248,13 @@ class MainActivity : AppCompatActivity() {
             pendingStart = false
             return
         }
-        if (settings.audioSource == "system") {
+        if (settings.audioSource == "system" && !LiveTranslateService.hasProjectionGrant()) {
             // Need a MediaProjection token. Prompt the user.
             val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjectionLauncher.launch(mpm.createScreenCaptureIntent())
         } else {
+            // Microphone, or the (paused) service still holds a live
+            // system-audio grant that the start reuses.
             startServiceWithProjection(0, null)
         }
     }
