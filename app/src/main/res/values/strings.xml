@@ -1,6 +1,4 @@
 <resources>
-    <!-- BCP-47 tag of this translation; language names are shown in it. -->
-    <string name="ui_language_tag">en</string>
     <string name="app_name">LiveBuddy</string>
     <string name="app_subtitle">Real-time speech translation powered by Gemini Live</string>
     <string name="settings_title">Settings</string>

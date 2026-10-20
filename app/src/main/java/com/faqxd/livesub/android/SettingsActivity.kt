@@ -26,7 +26,6 @@ import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.data.Languages
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
-import java.util.Locale
 
 /**
  * Port of `settings_window.py:SettingsDialog`.
@@ -41,12 +40,6 @@ class SettingsActivity : AppCompatActivity() {
     /** Languages picked in the pickers but not yet saved; null = unchanged. */
     private var pickedLanguage: String? = null
     private var pickedPairLanguage: String? = null
-
-    /**
-     * Language the UI strings actually resolved to (en for any locale
-     * without a translation), so language names never mix with it.
-     */
-    private val uiLocale: Locale by lazy { Locale.forLanguageTag(getString(R.string.ui_language_tag)) }
 
     private lateinit var apiKeyEdit: EditText
     private lateinit var showKeyBtn: Button
@@ -220,17 +213,12 @@ class SettingsActivity : AppCompatActivity() {
         noneLabel: String? = null,
         onPicked: (String) -> Unit,
     ) {
-        // Names follow the UI language; the English name and the code stay in
-        // every row so searching works either way.
-        val rows = Languages.ALL.map { lang ->
-            val local = Languages.localizedNameFor(lang.code, uiLocale)
-            val name = if (local.equals(lang.name, ignoreCase = true)) lang.name else "$local · ${lang.name}"
-            "$name  (${lang.code})"
-        }
+        // Each row: the language's own name, its English name and the code,
+        // so searching works with any of them.
+        val rows = Languages.ALL.map { "${Languages.displayNameFor(it.code)}  (${it.code})" }
         val adapter = LanguageAdapter(this, if (noneLabel != null) listOf(noneLabel) + rows else rows)
         fun label(code: String): String =
-            if (code.isEmpty() && noneLabel != null) noneLabel
-            else Languages.localizedNameFor(code, uiLocale)
+            if (code.isEmpty() && noneLabel != null) noneLabel else Languages.displayNameFor(code)
         picker.setAdapter(adapter)
         picker.setText(label(current()), false)
         // Tap = open the full list; free typing filters as usual. The first

@@ -102,17 +102,30 @@ object Languages {
         ALL.firstOrNull { it.code == code }?.name ?: code.uppercase()
 
     /**
-     * Name of [code] in [uiLocale] from the system's locale data, e.g. "日语"
-     * for "ja" in a Chinese UI; the English [nameFor] when the system has
-     * none. Simplified Chinese is looked up as zh-Hans so it reads
-     * "中文 (简体)" rather than "中文 (中国)".
+     * The language's own name for itself from the system's locale data,
+     * e.g. "日本語" for "ja" or "Español" for "es", whatever the UI
+     * language; the English [nameFor] when the system has none. Simplified
+     * Chinese is looked up as zh-Hans so it reads "中文 (简体)" rather than
+     * "中文 (中国)".
      */
-    fun localizedNameFor(code: String, uiLocale: Locale): String {
-        val tag = if (code == "zh-CN") "zh-Hans" else code
-        val name = Locale.forLanguageTag(tag).getDisplayName(uiLocale)
-        if (name.isBlank() || name.equals(tag, ignoreCase = true)) return nameFor(code)
-        // Some languages write language names in lower case ("japonais").
-        return name.replaceFirstChar { if (it.isLowerCase()) it.titlecase(uiLocale) else it.toString() }
+    fun nativeNameFor(code: String): String {
+        val locale = Locale.forLanguageTag(if (code == "zh-CN") "zh-Hans" else code)
+        val name = locale.getDisplayName(locale)
+        if (name.isBlank() || name.equals(locale.toLanguageTag(), ignoreCase = true)) return nameFor(code)
+        // Many languages write their own name in lower case ("español"), but
+        // inner capitals mark a deliberate lower-case prefix ("isiZulu").
+        if (name.takeWhile { !it.isWhitespace() }.drop(1).any { it.isUpperCase() }) return name
+        return name.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+    }
+
+    /**
+     * Picker label: the native name with the English one, e.g.
+     * "日本語 · Japanese", or just the English name when both coincide.
+     */
+    fun displayNameFor(code: String): String {
+        val native = nativeNameFor(code)
+        val english = nameFor(code)
+        return if (native.equals(english, ignoreCase = true)) english else "$native · $english"
     }
 
     /**
