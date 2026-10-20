@@ -117,11 +117,12 @@ class SettingsActivity : AppCompatActivity() {
             applyFromUi()
             settings.save(this)
 
+            // Playback, volume and appearance apply live through the
+            // service's prefs listener; only these need a new session.
             val affectsPipeline = prev.apiKey != settings.apiKey ||
                 prev.apiBase != settings.apiBase ||
                 prev.targetLanguage != settings.targetLanguage ||
                 prev.audioSource != settings.audioSource ||
-                prev.playTranslation != settings.playTranslation ||
                 prev.echoTargetLanguage != settings.echoTargetLanguage ||
                 prev.liveModel != settings.liveModel
 

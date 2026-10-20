@@ -67,7 +67,8 @@ class LiveTranslateService : Service() {
     private var overlay: CaptionOverlayView? = null
     private var client: GeminiClient? = null
     private var capture: AudioCapture? = null
-    private var player: AudioPlayer? = null
+    // Read on the socket thread (audio chunks, interruptions).
+    @Volatile private var player: AudioPlayer? = null
     private var mediaProjection: MediaProjection? = null
     @Volatile private var running = false
     private val notificationManager by lazy {
@@ -267,6 +268,10 @@ class LiveTranslateService : Service() {
         val s = AppSettings.load(this).also { settings = it }
         overlay?.updateSettings(s)
         overlay?.applyStyle()
+        // Translation playback switches on or off without a new session.
+        if (running) {
+            if (s.playTranslation) startPlayer(s) else stopPlayer()
+        }
         player?.setVolume(s.playbackVolume)
         // The caption mode decides what the main screen mirrors, too.
         publishState()
@@ -455,15 +460,7 @@ class LiveTranslateService : Service() {
 
         // Player (translation playback). Independent of the API's
         // same-language echo flag ([AppSettings.echoTargetLanguage]).
-        if (s.playTranslation) {
-            try {
-                val p = AudioPlayer(gain = s.playbackVolume).also { player = it }
-                p.start()
-            } catch (e: Exception) {
-                Log.w(TAG, "AudioPlayer init failed: ${e.message}")
-                player = null
-            }
-        }
+        if (s.playTranslation) startPlayer(s)
 
         // Gemini client
         val sessionId = ++currentSessionId
@@ -496,6 +493,22 @@ class LiveTranslateService : Service() {
             failPipeline(getString(R.string.status_start_failed, e.message ?: e.javaClass.simpleName))
             return
         }
+    }
+
+    /** Start translation playback; no-op while it is already playing. */
+    private fun startPlayer(s: AppSettings) {
+        if (player != null) return
+        try {
+            player = AudioPlayer(gain = s.playbackVolume).also { it.start() }
+        } catch (e: Exception) {
+            Log.w(TAG, "AudioPlayer init failed: ${e.message}")
+            player = null
+        }
+    }
+
+    private fun stopPlayer() {
+        try { player?.stop() } catch (_: Exception) {}
+        player = null
     }
 
     private fun startCaptureForSession(sessionId: Int) {
@@ -554,8 +567,7 @@ class LiveTranslateService : Service() {
         cancelReconnect()
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
-        try { player?.stop() } catch (_: Exception) {}
-        player = null
+        stopPlayer()
         client?.stop()
         client = null
         if (teardownProjectionGrant) teardownProjection()
@@ -582,8 +594,7 @@ class LiveTranslateService : Service() {
         cancelReconnect()
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
-        try { player?.stop() } catch (_: Exception) {}
-        player = null
+        stopPlayer()
         // NOTE: mediaProjection is intentionally kept alive so a
         // subsequent restart / toggle / reconnect can reuse the same
         // grant without re-prompting the user. Once a projection is
@@ -849,7 +860,7 @@ class LiveTranslateService : Service() {
                 pipelineRunning = false
                 currentSessionId++
                 capture?.stop(); capture = null
-                player?.stop(); player = null
+                stopPlayer()
                 client?.stop()
                 client = null
                 startPipelineWithCachedGrant()
@@ -901,7 +912,7 @@ class LiveTranslateService : Service() {
                     running = false
                     pipelineRunning = false
                     capture?.stop(); capture = null
-                    player?.stop(); player = null
+                    stopPlayer()
                     overlay?.setRunningState(false)
                     if (retryable) {
                         tryReconnect(reason)
