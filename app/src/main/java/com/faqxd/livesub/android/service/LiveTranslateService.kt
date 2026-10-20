@@ -462,22 +462,8 @@ class LiveTranslateService : Service() {
         // same-language echo flag ([AppSettings.echoTargetLanguage]).
         if (s.playTranslation) startPlayer(s)
 
-        // Gemini client
-        val sessionId = ++currentSessionId
-        // Text from the new session starts new transcript lines.
-        transcript.breakLines()
         pendingCaptureResultCode = resultCode
         pendingCaptureResultData = resultData
-
-        val c = GeminiClient(listener = createClientListener(sessionId)).also { client = it }
-        c.configure(
-            apiKey = s.apiKey,
-            targetLang = s.effectiveTargetLanguage,
-            echoTargetLanguage = s.echoTargetLanguage,
-            apiBase = s.apiBase,
-            liveModel = s.liveModel,
-            resumptionHandle = resumptionHandle,
-        )
 
         running = true
         pipelineRunning = true
@@ -487,12 +473,32 @@ class LiveTranslateService : Service() {
         LiveTileService.requestUpdate(this)
 
         try {
-            c.start()
+            startSession(s)
         } catch (e: Exception) {
             Log.e(TAG, "Gemini client start failed", e)
             failPipeline(getString(R.string.status_start_failed, e.message ?: e.javaClass.simpleName))
-            return
         }
+    }
+
+    /**
+     * Open a Live session with [s] and the latest resumption handle. Audio
+     * reaches it through [routeAudio] once the server acknowledges the
+     * setup (see onConnected). Throws if the client can't start.
+     */
+    private fun startSession(s: AppSettings) {
+        val sessionId = ++currentSessionId
+        // Text from the new session starts new transcript lines.
+        transcript.breakLines()
+        val c = GeminiClient(listener = createClientListener(sessionId)).also { client = it }
+        c.configure(
+            apiKey = s.apiKey,
+            targetLang = s.effectiveTargetLanguage,
+            echoTargetLanguage = s.echoTargetLanguage,
+            apiBase = s.apiBase,
+            liveModel = s.liveModel,
+            resumptionHandle = resumptionHandle,
+        )
+        c.start()
     }
 
     /** Start translation playback; no-op while it is already playing. */
@@ -511,26 +517,27 @@ class LiveTranslateService : Service() {
         player = null
     }
 
-    private fun startCaptureForSession(sessionId: Int) {
-        if (!isCurrentSession(sessionId) || !running || capture != null) return
+    /**
+     * Start capturing for the running pipeline. No-op while a capture is
+     * already running — it outlives goAway session swaps. Chunks go through
+     * [routeAudio] to whichever session is current.
+     */
+    private fun startCapture() {
+        if (!running || capture != null) return
 
         val s = settings ?: AppSettings.load(this).also { settings = it }
-        val c = client ?: return
         val resultData = pendingCaptureResultData
         if (s.audioSource == "system" && resultData == null) {
             failPipeline(getString(R.string.status_system_audio_permission))
             return
         }
 
+        val generation = ++captureGeneration
         val cap = AudioCapture(
-            onChunk = { pcm16 ->
-                if (isCurrentSession(sessionId) && running) {
-                    c.sendAudio(pcm16)
-                }
-            },
+            onChunk = { pcm16 -> routeAudio(pcm16) },
             onError = { reason ->
                 scope.launch {
-                    if (isCurrentSession(sessionId)) {
+                    if (generation == captureGeneration) {
                         failPipeline(
                             status = getString(R.string.status_capture_error, reason),
                             teardownProjectionGrant = s.audioSource == "system",
@@ -558,6 +565,58 @@ class LiveTranslateService : Service() {
         }
     }
 
+    /** Stop capturing and drop any audio held back for a session swap. */
+    private fun stopCapture() {
+        captureGeneration++
+        detachAudio(hold = false)
+        try { capture?.stop() } catch (_: Exception) {}
+        capture = null
+    }
+
+    // ---------- audio routing ----------
+
+    // Capture outlives a goAway session swap: chunks recorded while the
+    // replacement session connects are held (oldest dropped beyond
+    // HELD_AUDIO_MAX_CHUNKS) and flushed to it once it is ready, so the
+    // speech of the swap isn't lost. Guarded by [audioLock]; [routeAudio]
+    // runs on the capture thread.
+    private val audioLock = Any()
+    private var audioSink: GeminiClient? = null
+    private var holdAudio = false
+    private val heldAudio = ArrayDeque<ByteArray>()
+    // Bumped whenever a capture stops, so a late onError of an old one is ignored.
+    private var captureGeneration = 0
+
+    private fun routeAudio(pcm16: ByteArray) {
+        synchronized(audioLock) {
+            audioSink?.let {
+                it.sendAudio(pcm16)
+                return
+            }
+            if (!holdAudio) return
+            heldAudio.addLast(pcm16)
+            if (heldAudio.size > HELD_AUDIO_MAX_CHUNKS) heldAudio.removeFirst()
+        }
+    }
+
+    /** Send audio to [sink] from now on, flushing anything held back first. */
+    private fun attachAudio(sink: GeminiClient) {
+        synchronized(audioLock) {
+            while (heldAudio.isNotEmpty()) sink.sendAudio(heldAudio.removeFirst())
+            audioSink = sink
+            holdAudio = false
+        }
+    }
+
+    /** Stop sending audio; with [hold], keep it for the next session. */
+    private fun detachAudio(hold: Boolean) {
+        synchronized(audioLock) {
+            audioSink = null
+            holdAudio = hold
+            if (!hold) heldAudio.clear()
+        }
+    }
+
     private fun failPipeline(status: String, teardownProjectionGrant: Boolean = false) {
         currentSessionId++
         running = false
@@ -565,8 +624,7 @@ class LiveTranslateService : Service() {
         connectedAtMs = 0
         resumptionHandle = null
         cancelReconnect()
-        try { capture?.stop() } catch (_: Exception) {}
-        capture = null
+        stopCapture()
         stopPlayer()
         client?.stop()
         client = null
@@ -592,8 +650,7 @@ class LiveTranslateService : Service() {
         running = false
         pipelineRunning = false
         cancelReconnect()
-        try { capture?.stop() } catch (_: Exception) {}
-        capture = null
+        stopCapture()
         stopPlayer()
         // NOTE: mediaProjection is intentionally kept alive so a
         // subsequent restart / toggle / reconnect can reuse the same
@@ -852,18 +909,24 @@ class LiveTranslateService : Service() {
                 if (!isCurrentSession(sessionId) || !running) return@launch
                 Log.w(TAG, "goAway — swapping to a fresh session before server expiry")
                 // The connection was healthy (the server grants ~10 minutes),
-                // so reset the backoff and swap immediately. A stale handle
-                // is fine: the new setup continues the session context.
+                // so reset the backoff and swap immediately. Capture and
+                // playback keep running: audio recorded until the new session
+                // is ready is held and then flushed to it, so the swap loses
+                // no speech. A stale handle is fine: the new setup continues
+                // the session context.
                 reconnectAttempts = 0
                 connectedAtMs = 0
-                running = false
-                pipelineRunning = false
-                currentSessionId++
-                capture?.stop(); capture = null
-                stopPlayer()
+                detachAudio(hold = true)
                 client?.stop()
                 client = null
-                startPipelineWithCachedGrant()
+                try {
+                    startSession(settings ?: AppSettings.load(this@LiveTranslateService))
+                } catch (e: Exception) {
+                    Log.e(TAG, "session swap failed", e)
+                    failPipeline(
+                        getString(R.string.status_start_failed, e.message ?: e.javaClass.simpleName)
+                    )
+                }
             }
         }
         override fun onSetupSent() {
@@ -884,7 +947,11 @@ class LiveTranslateService : Service() {
                 // long enough (see onDisconnected).
                 connectedAtMs = SystemClock.elapsedRealtime()
                 setOverlayStatus(getString(R.string.status_connected), StatusKind.CONNECTED)
-                startCaptureForSession(sessionId)
+                // Audio goes to this session from now on (including what was
+                // held during a goAway swap); capture starts unless it is
+                // already running.
+                client?.let { attachAudio(it) }
+                startCapture()
                 if (isCurrentSession(sessionId) && running) {
                     updateNotification(running = true)
                 }
@@ -911,7 +978,7 @@ class LiveTranslateService : Service() {
                     currentSessionId++
                     running = false
                     pipelineRunning = false
-                    capture?.stop(); capture = null
+                    stopCapture()
                     stopPlayer()
                     overlay?.setRunningState(false)
                     if (retryable) {
@@ -1083,6 +1150,8 @@ class LiveTranslateService : Service() {
         private const val RECONNECT_BASE_DELAY_MS = 1000L
         /** A connection up at least this long resets the reconnect backoff. */
         private const val RECONNECT_STABLE_MS = 10_000L
+        /** Audio held during a goAway swap: 50 chunks of 100 ms = 5 s. */
+        private const val HELD_AUDIO_MAX_CHUNKS = 50
 
         const val ACTION_START = "com.faqxd.livesub.android.START"
         const val ACTION_STOP = "com.faqxd.livesub.android.STOP"
