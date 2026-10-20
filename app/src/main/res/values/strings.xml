@@ -22,6 +22,7 @@
     <string name="status_idle">Idle</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_connected">Connected</string>
+    <string name="status_no_audio">Connected · no audio detected</string>
     <string name="status_stopped">Stopped</string>
     <string name="status_session_setup">Setting up session…</string>
     <string name="status_disconnected">Disconnected: %1$s</string>

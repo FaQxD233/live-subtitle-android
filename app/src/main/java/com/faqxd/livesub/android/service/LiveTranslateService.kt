@@ -454,7 +454,19 @@ class LiveTranslateService : Service() {
                         )
                     }
                 }
-            }
+            },
+            onSilenceChanged = { silent ->
+                scope.launch {
+                    if (generation == captureGeneration) {
+                        audioSilent = silent
+                        // Only a plain connected state is replaced; connecting
+                        // and error statuses stay as they are.
+                        if (running && lastStateKind == StatusKind.CONNECTED) {
+                            setOverlayStatus(connectedStatusText(), StatusKind.CONNECTED)
+                        }
+                    }
+                }
+            },
         ).also { capture = it }
 
         try {
@@ -481,7 +493,18 @@ class LiveTranslateService : Service() {
         detachAudio(hold = false)
         try { capture?.stop() } catch (_: Exception) {}
         capture = null
+        audioSilent = false
     }
+
+    /**
+     * Status line while connected. Lasting silence of the captured audio is
+     * called out: in system-audio mode many apps opt out of playback
+     * capture or simply play nothing, and a busy or muted microphone also
+     * delivers silence — otherwise all the user sees is "Connected" without
+     * captions.
+     */
+    private fun connectedStatusText(): String =
+        getString(if (audioSilent) R.string.status_no_audio else R.string.status_connected)
 
     // ---------- audio routing ----------
 
@@ -494,8 +517,10 @@ class LiveTranslateService : Service() {
     private var audioSink: GeminiClient? = null
     private var holdAudio = false
     private val heldAudio = ArrayDeque<ByteArray>()
-    // Bumped whenever a capture stops, so a late onError of an old one is ignored.
+    // Bumped whenever a capture stops, so late callbacks of an old one are ignored.
     private var captureGeneration = 0
+    // The current capture reported lasting silence (see connectedStatusText).
+    private var audioSilent = false
 
     private fun routeAudio(pcm16: ByteArray) {
         synchronized(audioLock) {
@@ -856,7 +881,8 @@ class LiveTranslateService : Service() {
                 // counter is reset on disconnect only if the session lasted
                 // long enough (see onDisconnected).
                 connectedAtMs = SystemClock.elapsedRealtime()
-                setOverlayStatus(getString(R.string.status_connected), StatusKind.CONNECTED)
+                // Capture may already be running (goAway swap) and silent.
+                setOverlayStatus(connectedStatusText(), StatusKind.CONNECTED)
                 // Audio goes to this session from now on (including what was
                 // held during a goAway swap); capture starts unless it is
                 // already running.

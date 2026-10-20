@@ -40,6 +40,11 @@ import java.nio.ByteOrder
 class AudioCapture(
     private val onChunk: (ByteArray) -> Unit,
     private val onError: (String) -> Unit = {},
+    /**
+     * Called on the capture thread with `true` once the input has been
+     * silent for [SILENCE_HINT_MS], and with `false` when sound returns.
+     */
+    private val onSilenceChanged: (Boolean) -> Unit = {},
 ) {
     private val downsampler = PCM16Downsampler(targetRate = GEMINI_INPUT_RATE)
     private val chunker = PCM16Chunker(chunkSize = CHUNK_SIZE, onChunk = onChunk)
@@ -189,7 +194,7 @@ class AudioCapture(
         val buf = ByteArray(readBytes)
         val floats = FloatArray(readBytes / 2)
         val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        var silentChunks = 0
+        val silence = SilenceTracker("micLoop", "Mic may be muted or wrong source.")
         var totalRead = 0L
         var errorStreak = 0
         var failure: String? = null
@@ -224,20 +229,10 @@ class AudioCapture(
                 errorStreak = 0
                 totalRead += read
                 // Quick silence detection (RMS of PCM16 samples). Useful for
-                // diagnosing "no transcription" — logs whether the mic is
+                // diagnosing "no transcription" — whether the mic is
                 // actually delivering audio vs. feeding zeros.
                 val rms = computePcm16Rms(buf, 0, read)
-                if (rms < SILENCE_RMS_THRESHOLD) {
-                    silentChunks++
-                    if (silentChunks == LOG_SILENCE_AFTER) {
-                        Log.w(TAG, "micLoop: $silentChunks silent chunks in a row (rms=$rms). Mic may be muted or wrong source.")
-                    }
-                } else {
-                    if (silentChunks >= LOG_SILENCE_AFTER) {
-                        Log.i(TAG, "micLoop: audio resumed after $silentChunks silent chunks (rms=$rms)")
-                    }
-                    silentChunks = 0
-                }
+                silence.update(rms, read * 1000L / (sampleRate * 2))
 
                 // PCM16 LE bytes → Float32 → downsampler → 16 kHz mono PCM16 LE
                 val frames = read / 2  // mono: 1 sample = 2 bytes
@@ -271,7 +266,7 @@ class AudioCapture(
         val buf = ByteArray(bufSize)
         val floats = FloatArray(bufSize / 2)
         val shortBuffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        var silentChunks = 0
+        val silence = SilenceTracker("systemLoop", "App may block playback capture or be silent.")
         var totalRead = 0L
         var errorStreak = 0
         var failure: String? = null
@@ -305,17 +300,7 @@ class AudioCapture(
             errorStreak = 0
             totalRead += read
             val rms = computePcm16Rms(buf, 0, read)
-            if (rms < SILENCE_RMS_THRESHOLD) {
-                silentChunks++
-                if (silentChunks == LOG_SILENCE_AFTER) {
-                    Log.w(TAG, "systemLoop: $silentChunks silent chunks in a row (rms=$rms). App may block playback capture or be silent.")
-                }
-            } else {
-                if (silentChunks >= LOG_SILENCE_AFTER) {
-                    Log.i(TAG, "systemLoop: audio resumed after $silentChunks silent chunks (rms=$rms)")
-                }
-                silentChunks = 0
-            }
+            silence.update(rms, read * 1000L / (sampleRate * channels * 2))
             // PCM16 LE bytes → Float32 array
             val frames = read / 2 / channels
             val sampleCount = frames * channels
@@ -339,6 +324,38 @@ class AudioCapture(
         Log.i(TAG, "systemLoop exited: totalRead=$totalRead")
     }
 
+    /**
+     * Tracks how long the input has been silent: logs once after
+     * [SILENCE_LOG_MS] for diagnostics ([hint] names the likely cause) and
+     * reports [onSilenceChanged] after [SILENCE_HINT_MS] and on recovery.
+     * Capture thread only.
+     */
+    private inner class SilenceTracker(private val loop: String, private val hint: String) {
+        private var silentMs = 0L
+        private var logged = false
+        private var reported = false
+
+        fun update(rms: Double, durationMs: Long) {
+            if (rms < SILENCE_RMS_THRESHOLD) {
+                silentMs += durationMs
+                if (!logged && silentMs >= SILENCE_LOG_MS) {
+                    logged = true
+                    Log.w(TAG, "$loop: silent for ${silentMs}ms (rms=$rms). $hint")
+                }
+                if (!reported && silentMs >= SILENCE_HINT_MS) {
+                    reported = true
+                    onSilenceChanged(true)
+                }
+            } else {
+                if (logged) Log.i(TAG, "$loop: audio resumed after ${silentMs}ms of silence (rms=$rms)")
+                if (reported) onSilenceChanged(false)
+                silentMs = 0L
+                logged = false
+                reported = false
+            }
+        }
+    }
+
     private fun computePcm16Rms(buf: ByteArray, offset: Int, len: Int): Double {
         if (len < 2) return 0.0
         val sb = ByteBuffer.wrap(buf, offset, len).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
@@ -356,6 +373,8 @@ class AudioCapture(
         const val GEMINI_INPUT_RATE = 16000
         const val CHUNK_SIZE = 3200  // bytes per Gemini send (~100 ms @16kHz mono int16)
         private const val SILENCE_RMS_THRESHOLD = 0.005  // ~-46 dBFS; below this we call it silent
-        private const val LOG_SILENCE_AFTER = 75  // ~3s of silent 40ms mic chunks before we warn
+        private const val SILENCE_LOG_MS = 3_000L  // silence before the diagnostic log line
+        /** Silence before [onSilenceChanged] reports it (longer than usual speech pauses). */
+        const val SILENCE_HINT_MS = 8_000L
     }
 }

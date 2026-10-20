@@ -23,6 +23,7 @@
     <string name="status_idle">空闲</string>
     <string name="status_connecting">连接中…</string>
     <string name="status_connected">已连接</string>
+    <string name="status_no_audio">已连接 · 未检测到声音</string>
     <string name="status_stopped">已停止</string>
     <string name="status_session_setup">正在建立会话…</string>
     <string name="status_disconnected">已断开：%1$s</string>
