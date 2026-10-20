@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -42,7 +43,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
     private lateinit var langBadge: TextView
+    private lateinit var outputScroll: ScrollView
     private lateinit var outputView: TextView
+    private lateinit var inputDivider: View
+    private lateinit var inputScroll: ScrollView
     private lateinit var inputView: TextView
     private lateinit var toggleBtn: Button
     private lateinit var settingsBtn: Button
@@ -106,7 +110,10 @@ class MainActivity : AppCompatActivity() {
         statusDot = findViewById(R.id.statusDot)
         statusText = findViewById(R.id.statusText)
         langBadge = findViewById(R.id.langBadge)
+        outputScroll = findViewById(R.id.outputScroll)
         outputView = findViewById(R.id.outputView)
+        inputDivider = findViewById(R.id.inputDivider)
+        inputScroll = findViewById(R.id.inputScroll)
         inputView = findViewById(R.id.inputView)
         toggleBtn = findViewById(R.id.toggleBtn)
         settingsBtn = findViewById(R.id.settingsBtn)
@@ -155,7 +162,10 @@ class MainActivity : AppCompatActivity() {
         // a2b/b2a coincide when the target already is Simplified Chinese.
         directionBtn.visibility =
             if (settings.canToggleDirection) View.VISIBLE else View.GONE
-        inputView.visibility = if (settings.showOriginal) View.VISIBLE else View.GONE
+        // Without the original the translation takes the whole card.
+        val originalVisibility = if (settings.showOriginal) View.VISIBLE else View.GONE
+        inputDivider.visibility = originalVisibility
+        inputScroll.visibility = originalVisibility
         val noKeyHint = getString(R.string.err_no_api_key)
         if (settings.apiKey.isBlank()) {
             showHint(noKeyHint)
@@ -180,16 +190,24 @@ class MainActivity : AppCompatActivity() {
         }
         statusDot.background?.setTint(ContextCompat.getColor(this, colorRes))
         statusText.text = s.status.ifEmpty { getString(R.string.status_idle) }
-        if (outputView.text.toString() != s.output) {
-            outputView.text = s.output.ifEmpty { "—" }
+        val output = s.output.ifEmpty { "—" }
+        if (outputView.text.toString() != output) {
+            outputView.text = output
+            scrollToEnd(outputScroll, outputView)
         }
         if (inputView.text.toString() != s.input) {
             inputView.text = s.input
+            scrollToEnd(inputScroll, inputView)
         }
         if (serviceRunning != s.running) {
             serviceRunning = s.running
             toggleBtn.text = getString(if (s.running) R.string.stop else R.string.start)
         }
+    }
+
+    /** Show the newest caption line once the new text has been laid out. */
+    private fun scrollToEnd(scroll: ScrollView, content: View) {
+        scroll.post { scroll.scrollTo(0, content.bottom) }
     }
 
     private fun onToggleClicked() {
