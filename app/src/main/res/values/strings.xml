@@ -83,6 +83,7 @@
     <string name="bg_opacity">Background opacity</string>
     <string name="show_original">Show original (source) transcript</string>
     <string name="latest_only">Show only the latest caption (no history)</string>
+    <string name="latest_sentence_count">Sentences shown</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
 

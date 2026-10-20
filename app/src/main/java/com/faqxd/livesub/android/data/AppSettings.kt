@@ -27,6 +27,7 @@ import androidx.core.content.edit
  *  - showOriginal        — Whether to display the source-language transcript.
  *  - showLatestOnly      — Whether the overlay shows only the newest caption
  *                          (current sentence) instead of the full history.
+ *  - latestSentenceCount — Sentences shown in latest-only mode (1..3).
  *  - liveModel           — Gemini Live model override.
  *  - liveDirection       — "a2b" means Chinese→target language; "b2a"
  *                          means target language→Simplified Chinese.
@@ -43,6 +44,7 @@ data class AppSettings(
     var playbackVolume: Float = 0.8f,
     var showOriginal: Boolean = false,
     var showLatestOnly: Boolean = false,
+    var latestSentenceCount: Int = 1,
     var liveModel: String = DEFAULT_LIVE_MODEL,
     var liveDirection: String = "a2b",
     // Persisted overlay geometry in WindowManager px; MIN_VALUE = unset.
@@ -91,6 +93,8 @@ data class AppSettings(
         const val DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
         const val SIMPLIFIED_CHINESE = "zh-CN"
         const val DEFAULT_LIVE_MODEL = "gemini-3.5-live-translate-preview"
+        /** Upper bound of [latestSentenceCount]. */
+        const val MAX_LATEST_SENTENCES = 3
         private const val PREFS_NAME = "livebuddy_settings"
 
         /** Backing preferences file for [load] / [save]; also for change listeners. */
@@ -141,6 +145,8 @@ data class AppSettings(
                 playbackVolume = prefs.getFloat("playback_volume", 0.8f),
                 showOriginal = prefs.getBoolean("show_original", false),
                 showLatestOnly = prefs.getBoolean("latest_only", false),
+                latestSentenceCount = prefs.getInt("latest_sentence_count", 1)
+                    .coerceIn(1, MAX_LATEST_SENTENCES),
                 liveModel = liveModel,
                 liveDirection = normalizeDirection(rawDirection),
                 overlayX = prefs.getInt("overlay_x", Int.MIN_VALUE),
@@ -217,6 +223,7 @@ data class AppSettings(
             putFloat("playback_volume", playbackVolume)
             putBoolean("show_original", showOriginal)
             putBoolean("latest_only", showLatestOnly)
+            putInt("latest_sentence_count", latestSentenceCount.coerceIn(1, MAX_LATEST_SENTENCES))
             putString("live_model", liveModel.trim().ifBlank { DEFAULT_LIVE_MODEL })
             putString("live_direction", normalizeDirection(liveDirection))
             putString("mode", "live")

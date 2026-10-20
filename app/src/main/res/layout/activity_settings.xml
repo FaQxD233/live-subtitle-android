@@ -235,6 +235,32 @@
                 android:text="@string/latest_only"
                 android:textColor="@color/text_primary_light"
                 android:textSize="13sp" />
+
+            <!-- Sentences shown in latest-only mode; enabled with the box above. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="32dp">
+
+                <TextView
+                    android:id="@+id/latestCountLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/latest_sentence_count"
+                    android:textColor="@color/text_primary_light"
+                    android:textSize="13sp" />
+
+                <Spinner
+                    android:id="@+id/latestCountSpinner"
+                    android:layout_width="96dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:paddingHorizontal="10dp" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- ADVANCED -->

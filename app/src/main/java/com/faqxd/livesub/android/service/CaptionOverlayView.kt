@@ -410,17 +410,18 @@ class CaptionOverlayView(
 
     /**
      * Text shown for one caption stream. Latest-only mode shows just the
-     * previous sentence above the one being spoken right now, split by
-     * punctuation over the whole history (so it works no matter how the
-     * server chunks the transcription); a newline separates them because
-     * languages differ on inter-sentence spacing.
+     * newest [AppSettings.latestSentenceCount] sentences (the last one is
+     * being spoken right now), split by punctuation over the whole history
+     * so it works no matter how the server chunks the transcription; a
+     * newline separates them because languages differ on inter-sentence
+     * spacing.
      */
     private fun captionText(history: String, maxChars: Int): String {
         val full = history.trim()
         if (!settings.showLatestOnly) return capHistory(full, maxChars)
-        val latest = latestSentences(full, LATEST_SENTENCES).joinToString("\n")
+        val latest = latestSentences(full, settings.latestSentenceCount).joinToString("\n")
         // A long run without punctuation must not turn into a wall of text.
-        return capHistory(latest, LATEST_ONLY_MAX_CHARS)
+        return capHistory(latest, LATEST_ONLY_CHARS_PER_SENTENCE * settings.latestSentenceCount)
     }
 
     /**
@@ -752,10 +753,8 @@ class CaptionOverlayView(
         private const val MAX_OUTPUT_CHARS = 3000
         /** Newest-kept characters of original input history. */
         private const val MAX_INPUT_CHARS = 1500
-        /** Sentences shown in latest-only mode: previous + current. */
-        private const val LATEST_SENTENCES = 2
-        /** Cap for the latest-only text when punctuation never arrives. */
-        private const val LATEST_ONLY_MAX_CHARS = 200
+        /** Cap per shown sentence in latest-only mode (no punctuation). */
+        private const val LATEST_ONLY_CHARS_PER_SENTENCE = 200
         /**
          * Highest window opacity for which Android 12+ still lets touches
          * pass through an app overlay (the platform default maximum

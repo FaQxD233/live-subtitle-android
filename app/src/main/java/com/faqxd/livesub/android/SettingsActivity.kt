@@ -46,6 +46,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var opacitySlider: SeekBar
     private lateinit var showOriginalCheck: CheckBox
     private lateinit var latestOnlyCheck: CheckBox
+    private lateinit var latestCountLabel: TextView
+    private lateinit var latestCountSpinner: Spinner
     private lateinit var modelLabel: TextView
     private lateinit var modelEdit: EditText
     private lateinit var saveBtn: Button
@@ -75,6 +77,8 @@ class SettingsActivity : AppCompatActivity() {
         opacitySlider = findViewById(R.id.opacitySlider)
         showOriginalCheck = findViewById(R.id.showOriginalCheck)
         latestOnlyCheck = findViewById(R.id.latestOnlyCheck)
+        latestCountLabel = findViewById(R.id.latestCountLabel)
+        latestCountSpinner = findViewById(R.id.latestCountSpinner)
         modelLabel = findViewById(R.id.modelLabel)
         modelEdit = findViewById(R.id.modelEdit)
         saveBtn = findViewById(R.id.saveBtn)
@@ -246,6 +250,14 @@ class SettingsActivity : AppCompatActivity() {
         opacitySlider.progress = (settings.bgOpacity * 100).toInt()
         showOriginalCheck.isChecked = settings.showOriginal
         latestOnlyCheck.isChecked = settings.showLatestOnly
+        latestCountSpinner.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item,
+            (1..AppSettings.MAX_LATEST_SENTENCES).map { it.toString() },
+        )
+        latestCountSpinner.setSelection(settings.latestSentenceCount - 1)
+        // The count only matters in latest-only mode.
+        setLatestCountEnabled(settings.showLatestOnly)
+        latestOnlyCheck.setOnCheckedChangeListener { _, checked -> setLatestCountEnabled(checked) }
         modelEdit.setText(settings.liveModel)
         modelLabel.text = "Live Model"
     }
@@ -264,8 +276,15 @@ class SettingsActivity : AppCompatActivity() {
         settings.bgOpacity = opacitySlider.progress / 100f
         settings.showOriginal = showOriginalCheck.isChecked
         settings.showLatestOnly = latestOnlyCheck.isChecked
+        settings.latestSentenceCount = latestCountSpinner.selectedItemPosition + 1
         settings.liveModel = modelEdit.text.toString().trim()
             .ifBlank { AppSettings.DEFAULT_LIVE_MODEL }
+    }
+
+    private fun setLatestCountEnabled(enabled: Boolean) {
+        latestCountLabel.isEnabled = enabled
+        latestCountSpinner.isEnabled = enabled
+        latestCountLabel.alpha = if (enabled) 1f else 0.4f
     }
 
     override fun onSupportNavigateUp(): Boolean {
