@@ -1,45 +1,14 @@
 package com.faqxd.livesub.android.transcript
 
 /**
- * Caption segment rule shared by the HUD and the transcript (port of the
- * draft / committed handling in `hud_window.py:HUDWindow.set_output`):
- * a segment that extends the current draft is a cumulative update and
- * replaces it; any other segment finalizes the draft and becomes the new one.
- */
-class SegmentMerger {
-    var draft: String = ""
-        private set
-
-    /** Feed a segment; returns the text it finalized ("" if none). */
-    fun push(segment: String): String {
-        if (draft.isNotEmpty() && segment.startsWith(draft)) {
-            draft = segment
-            return ""
-        }
-        val finalized = draft
-        draft = segment
-        return finalized
-    }
-
-    /** Finalize the current draft and return it. */
-    fun flush(): String {
-        val finalized = draft
-        draft = ""
-        return finalized
-    }
-
-    fun reset() {
-        draft = ""
-    }
-}
-
-/**
  * Full caption history of one service run, kept so it can be exported.
  *
  * Original and translated segments are recorded separately and grouped
  * into lines: a pause longer than [PAUSE_GAP_MS] within a stream starts a
- * new line. Segments are stored untrimmed so word spacing survives. Not
- * thread-safe; call it from the main thread only.
+ * new line. The Live API streams transcription as deltas that carry their
+ * own leading spaces (verified 2026-10-20 against the translate model), so
+ * segments are appended verbatim. Not thread-safe; call it from the main
+ * thread only.
  */
 class TranscriptRecorder(
     private val clock: () -> Long = System::currentTimeMillis,
@@ -92,7 +61,7 @@ class TranscriptRecorder(
         val track = tracks.getValue(stream)
         if (!track.isEmpty && now - track.lastAt > PAUSE_GAP_MS) closeLine(track)
         if (track.isEmpty) track.startedAt = now
-        track.finalized.append(track.merger.push(segment))
+        track.text.append(segment)
         track.lastAt = now
         maybePersist()
     }
@@ -107,7 +76,7 @@ class TranscriptRecorder(
     fun snapshot(): List<Line> {
         val open = tracks.values
             .filterNot { it.isEmpty }
-            .map { Line(it.stream, it.startedAt, it.text()) }
+            .map { Line(it.stream, it.startedAt, it.text.toString().trim()) }
         return (lines + open)
             .filter { it.text.isNotEmpty() }
             .sortedBy { it.startedAt }
@@ -115,25 +84,21 @@ class TranscriptRecorder(
 
     private fun closeLine(track: Track) {
         if (track.isEmpty) return
-        track.finalized.append(track.merger.flush())
-        val text = track.finalized.toString().trim()
+        val text = track.text.toString().trim()
         if (text.isNotEmpty()) {
             lines.add(Line(track.stream, track.startedAt, text))
             if (lines.size > MAX_LINES) lines.subList(0, lines.size - MAX_LINES).clear()
         }
-        track.finalized.setLength(0)
+        track.text.setLength(0)
     }
 
     private class Track(val stream: Stream) {
-        val merger = SegmentMerger()
-        val finalized = StringBuilder()
+        val text = StringBuilder()
         var startedAt = 0L
         var lastAt = 0L
 
         val isEmpty: Boolean
-            get() = finalized.isEmpty() && merger.draft.isEmpty()
-
-        fun text(): String = (finalized.toString() + merger.draft).trim()
+            get() = text.isEmpty()
     }
 
     companion object {

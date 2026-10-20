@@ -19,3 +19,8 @@
   TEXT-only 模态做省带宽/省算力优化**。
 - `echoTargetLanguage` 的含义是「输入本来就是目标语言时是否复述」，与是否本地
   播放翻译无关（本地播放由 `playTranslation` 控制，B3 已拆分）。
+- `inputTranscription` / `outputTranscription` 是**增量片段**（2026-10-20 用
+  `live-api-demo/test_text_modality.py` 实测）：每条只带新增的文字并自带前导空格，
+  例如 `'Hello. This is a'`、`' test of the live'`、`' translation'`，直接拼接即可。
+  **不要再按「新片段以上一片段开头就替换」的累积式规则合并**，那样会吞掉恰好重复的
+  片段（例如「谢」+「谢」）。

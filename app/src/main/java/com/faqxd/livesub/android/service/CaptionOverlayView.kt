@@ -19,7 +19,6 @@ import android.widget.TextView
 import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
-import com.faqxd.livesub.android.transcript.SegmentMerger
 import com.faqxd.livesub.android.transcript.latestSentences
 import kotlin.math.abs
 
@@ -69,11 +68,11 @@ class CaptionOverlayView(
         fun onExportClicked()
     }
 
-    // ---- Caption text state (mirrors HUDWindow._out_committed / _out_draft) ----
-    private var outCommitted = ""
-    private val outMerger = SegmentMerger()
-    private var inCommitted = ""
-    private val inMerger = SegmentMerger()
+    // ---- Caption text state ----
+    // The Live API streams transcription as deltas that carry their own
+    // leading spaces, so the history is the plain concatenation.
+    private var outHistory = ""
+    private var inHistory = ""
     private var statusText = ""
     private var statusKind: StatusKind = StatusKind.IDLE
     private var isRunning = false
@@ -222,18 +221,14 @@ class CaptionOverlayView(
     // ---------- public API (mirrors HUDWindow) ----------
 
     fun setOutput(text: String?) {
-        val finalized = outMerger.push(text ?: "")
-        if (finalized.isNotEmpty()) {
-            outCommitted = capHistory(outCommitted + finalized, MAX_OUTPUT_CHARS)
-        }
+        if (text.isNullOrEmpty()) return
+        outHistory = capHistory(outHistory + text, MAX_OUTPUT_CHARS)
         refreshOutput()
     }
 
     fun setInput(text: String?) {
-        val finalized = inMerger.push(text ?: "")
-        if (finalized.isNotEmpty()) {
-            inCommitted = capHistory(inCommitted + finalized, MAX_INPUT_CHARS)
-        }
+        if (text.isNullOrEmpty()) return
+        inHistory = capHistory(inHistory + text, MAX_INPUT_CHARS)
         refreshInput()
     }
 
@@ -252,10 +247,8 @@ class CaptionOverlayView(
     }
 
     fun clear() {
-        outCommitted = ""
-        outMerger.reset()
-        inCommitted = ""
-        inMerger.reset()
+        outHistory = ""
+        inHistory = ""
         refreshOutput()
         refreshInput()
     }
@@ -390,7 +383,7 @@ class CaptionOverlayView(
     // ---------- internals ----------
 
     private fun refreshOutput() {
-        val text = captionText(outCommitted + outMerger.draft, MAX_OUTPUT_CHARS)
+        val text = captionText(outHistory, MAX_OUTPUT_CHARS)
         val display = text.ifEmpty {
             // No caption yet: show a connecting placeholder while the pipeline
             // is spinning up, otherwise the idle em-dash.
@@ -408,7 +401,7 @@ class CaptionOverlayView(
     }
 
     private fun refreshInput() {
-        val text = captionText(inCommitted + inMerger.draft, MAX_INPUT_CHARS)
+        val text = captionText(inHistory, MAX_INPUT_CHARS)
         if (inputView.text.toString() != text) {
             inputView.text = text
             inputScroll.post { inputScroll.fullScroll(View.FOCUS_DOWN) }
