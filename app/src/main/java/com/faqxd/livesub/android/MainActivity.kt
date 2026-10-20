@@ -156,7 +156,10 @@ class MainActivity : AppCompatActivity() {
     private fun handleAutoStart(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_AUTO_START, false) != true) return
         intent.removeExtra(EXTRA_AUTO_START)
-        if (!LiveTranslateService.isPipelineRunning()) onToggleClicked()
+        // onNewIntent can run before onResume re-syncs the button state;
+        // the toggle must not read a stale "running" and stop instead.
+        serviceRunning = LiveTranslateService.isPipelineRunning()
+        if (!serviceRunning) onToggleClicked()
     }
 
     override fun onStart() {
