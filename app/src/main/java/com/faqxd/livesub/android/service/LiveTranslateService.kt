@@ -802,13 +802,11 @@ class LiveTranslateService : Service() {
             if (isCurrentSession(sessionId)) player?.enqueuePcm16(pcm16)
         }
         override fun onInterrupted() {
-            scope.launch {
-                if (isCurrentSession(sessionId)) {
-                    // The user talked over the model: anything still queued
-                    // is stale and must not keep playing.
-                    player?.flush()
-                }
-            }
+            // The user talked over the model: anything still queued is stale
+            // and must not keep playing. Flush right here on the socket
+            // thread (the player is thread-safe) — a flush posted to the main
+            // thread could also wipe newer audio queued meanwhile.
+            if (isCurrentSession(sessionId)) player?.flush()
         }
         override fun onSessionResumptionHandle(handle: String) {
             scope.launch {

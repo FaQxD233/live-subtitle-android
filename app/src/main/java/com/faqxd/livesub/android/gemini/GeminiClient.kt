@@ -35,7 +35,11 @@ class GeminiClient(
         fun onInputTranscript(text: String)
         fun onOutputTranscript(text: String)
         fun onAudioChunk(pcm16: ByteArray)
-        /** The user interrupted the model; any queued playback is stale. */
+        /**
+         * The user interrupted the model; any queued playback is stale.
+         * Called on the socket thread before later messages are handled,
+         * so the flush can't race newer audio.
+         */
         fun onInterrupted()
         /**
          * The server signaled the connection's imminent expiry (goAway).
@@ -294,6 +298,14 @@ class GeminiClient(
             return
         }
 
+        // An interrupted turn is stale: flush the player first and skip any
+        // audio bundled into the same message (mirrors the Windows client).
+        val interrupted = content.optBoolean("interrupted", false)
+        if (interrupted) {
+            Log.v(TAG, "interrupted")
+            listener.onInterrupted()
+        }
+
         content.optJSONObject("inputTranscription")?.let { tr ->
             val t = tr.optString("text", "")
             if (t.isNotEmpty()) listener.onInputTranscript(t)
@@ -304,7 +316,7 @@ class GeminiClient(
             if (t.isNotEmpty()) listener.onOutputTranscript(t)
         }
 
-        content.optJSONObject("modelTurn")?.let { turn ->
+        if (!interrupted) content.optJSONObject("modelTurn")?.let { turn ->
             val parts = turn.optJSONArray("parts") ?: return@let
             for (i in 0 until parts.length()) {
                 val part = parts.optJSONObject(i) ?: continue
@@ -322,12 +334,8 @@ class GeminiClient(
             }
         }
 
-        // Log interruption / turn-complete events for debugging latency.
+        // Log turn-complete events for debugging latency.
         if (content.optBoolean("turnComplete", false)) Log.v(TAG, "turnComplete")
-        if (content.optBoolean("interrupted", false)) {
-            Log.v(TAG, "interrupted")
-            listener.onInterrupted()
-        }
     }
 
     private fun modelResourceName(model: String): String =
