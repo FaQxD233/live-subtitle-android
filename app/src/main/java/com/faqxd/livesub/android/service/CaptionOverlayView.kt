@@ -22,6 +22,7 @@ import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.transcript.latestSentences
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Port of `hud_window.py:HUDWindow`.
@@ -274,10 +275,12 @@ class CaptionOverlayView(
         // Add subtle shadow to output text for depth (radius 4dp, offset 2dp down, 50% black)
         outputView.setShadowLayer(4f * density, 0f, 2f * density, 0x80000000.toInt())
 
-        // Input font (60% of output, italic, slightly more muted)
+        // Input font (60% of output, italic, slightly more muted). The same
+        // shadow keeps it readable over a transparent card.
         inputView.setTypeface(inputView.typeface, android.graphics.Typeface.ITALIC)
         inputView.setTextSize(TypedValue.COMPLEX_UNIT_SP, (settings.fontSize * 0.6f))
         inputView.setTextColor(context.getColor(R.color.hud_input_text))
+        inputView.setShadowLayer(3f * density, 0f, 1.5f * density, 0x80000000.toInt())
 
         // Language badge + direction-swap button.
         updateDirectionUi(settings)
@@ -301,10 +304,13 @@ class CaptionOverlayView(
         originalBtn.setBackgroundResource(
             if (highlighted) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary
         )
-        // Card opacity: alpha is applied to the whole root view. Keep it
-        // high enough that the drop shadow stays visible.
-        val alpha = (0.4f + 0.6f * settings.bgOpacity.coerceIn(0f, 1f))
-        rootView.alpha = alpha
+        // Background opacity applies to the card background only; captions
+        // and controls stay fully opaque (as on the Windows HUD). The card's
+        // elevation shadow follows, since its outline alpha tracks the
+        // background's fill alpha.
+        overlayRoot.background?.mutate()?.alpha =
+            (settings.bgOpacity.coerceIn(0f, 1f) * 255).roundToInt()
+        overlayRoot.invalidateOutline()
         refreshStatus()
         // showLatestOnly / caption mode flips must re-render the captions.
         refreshOutput()
