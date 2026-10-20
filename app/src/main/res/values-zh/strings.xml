@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 本翻译的 BCP-47 标签；语言名称按它显示。 -->
+    <string name="ui_language_tag">zh-Hans</string>
     <string name="app_name">LiveBuddy</string>
     <string name="app_subtitle">Gemini Live 实时语音翻译</string>
     <string name="settings_title">设置</string>

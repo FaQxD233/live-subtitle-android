@@ -1,5 +1,7 @@
 package com.faqxd.livesub.android.data
 
+import java.util.Locale
+
 /**
  * Supported target languages (official Live Translation list, see
  * ai.google.dev/gemini-api/docs/live-api/live-translate).
@@ -98,6 +100,20 @@ object Languages {
 
     fun nameFor(code: String): String =
         ALL.firstOrNull { it.code == code }?.name ?: code.uppercase()
+
+    /**
+     * Name of [code] in [uiLocale] from the system's locale data, e.g. "日语"
+     * for "ja" in a Chinese UI; the English [nameFor] when the system has
+     * none. Simplified Chinese is looked up as zh-Hans so it reads
+     * "中文 (简体)" rather than "中文 (中国)".
+     */
+    fun localizedNameFor(code: String, uiLocale: Locale): String {
+        val tag = if (code == "zh-CN") "zh-Hans" else code
+        val name = Locale.forLanguageTag(tag).getDisplayName(uiLocale)
+        if (name.isBlank() || name.equals(tag, ignoreCase = true)) return nameFor(code)
+        // Some languages write language names in lower case ("japonais").
+        return name.replaceFirstChar { if (it.isLowerCase()) it.titlecase(uiLocale) else it.toString() }
+    }
 
     /**
      * Compact badge label. Region-qualified codes keep their region
