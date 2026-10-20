@@ -126,6 +126,11 @@ class LiveTranslateService : Service() {
             lastResultCode = 0
             lastResultData = null
             Log.w(TAG, "MediaProjection stopped by system; grant cleared")
+            // The loopback recorder delivers nothing from now on; say so
+            // instead of showing "Connected" over a silent pipeline.
+            if (running && settings?.audioSource == "system") {
+                failPipeline(getString(R.string.status_system_audio_permission))
+            }
         }
     }
 
