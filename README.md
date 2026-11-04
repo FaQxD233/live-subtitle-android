@@ -11,7 +11,7 @@
 - 78 种目标语言（官方 Live Translate 支持列表，同时显示语言自身的名称和英文名，如「日本語 · Japanese」，可按两者或代码搜索）
 - 默认单向翻译（全部翻成一种语言）；可选双向对话，一键在两种输出语言之间切换
 - 字幕内容三档：仅译文 / 双语 / 仅原文；可只显示最新 1–3 句
-- 字幕记录跨会话保存，按会话分段导出为 `.txt`，可在主界面清空
+- 字幕记录：每次运行结束后自动暂存（最多 3 次，不足 5 秒或没有字幕的不暂存），可在主界面的「字幕记录」里永久保存为 `.txt`，再查看、分享或删除
 - 快捷设置磁贴一键开始 / 停止
 - Live 模型可配置；设置页可测试连接
 - API Base URL 可自定义（走代理或自建中转）
@@ -106,10 +106,18 @@ gradle installDebug
 - **只显示最新字幕**：Settings 中开启后只显示最新的 1–3 句（句数可选），按句末标点切分
 - **背景不透明度**：只作用于卡片背景，字幕文字始终不透明；调到 0 即透明背景
 - **点击穿透**：点控制条的锁形按钮后，触摸会穿过悬浮窗传到下层应用（例如视频播放器的控件），此时悬浮窗略变透明——这是 Android 12+ 对可穿透悬浮窗的要求（窗口不透明度不超过 80%）。点原位置出现的解锁按钮，或通知栏里的“退出点击穿透”恢复
-- **导出字幕**：点控制条的导出按钮（或主界面的「导出字幕」），把原文和译文按会话、按停顿分段并带时间戳导出为 `.txt`，通过系统分享发送或保存
+- **导出字幕**：点控制条的导出按钮，把本次运行到目前为止的原文和译文按停顿分段、带时间戳导出为 `.txt`，通过系统分享发送或保存。停止后这次运行会进入「字幕记录」
 - **控制条**：Pause/Start · Clear · 字幕内容 · 点击穿透 · 导出 · Settings
 
 前台服务通知里有 **Pause/Start** 和 **Stop** 两个按钮。
+
+## 字幕记录
+
+从开始到停止算一次运行，中途的暂停、换线、重连都算在同一次里。主界面的 **字幕记录** 按运行管理字幕：
+
+- **最近（未保存）**：运行结束时，有字幕且不少于 5 秒的会自动暂存在这里，最多 3 条，新的替换最旧的。每条可以 **保存** 或 **丢弃**。运行中 App 被强行停止的那次，下次打开 App 时补进来
+- **已保存**：保存后渲染成 `.txt`，按开始时间倒序排列，每条可以 **分享**（系统分享面板）或 **删除**
+- 点一条记录可以在 App 内查看全文，文字可选中复制
 
 ## 配置
 
@@ -122,10 +130,12 @@ gradle installDebug
 字幕记录保存在：
 
 ```
-/data/data/com.faqxd.livesub.android/files/transcript.jsonl
+/data/data/com.faqxd.livesub.android/files/session.jsonl                           # 进行中的运行
+/data/data/com.faqxd.livesub.android/files/transcripts/recent/                     # 最近（未保存）
+/storage/emulated/0/Android/data/com.faqxd.livesub.android/files/transcripts/      # 已保存的 .txt
 ```
 
-**注意**：API key 和字幕记录都以明文存储。App 已禁用 Android 系统备份，避免它们随 Auto Backup 进入云端备份；但 root 设备上的其他进程理论上仍可读取。
+**注意**：API key 和字幕记录都以明文存储。App 已禁用 Android 系统备份，避免它们随 Auto Backup 进入云端备份；但 root 设备上的其他进程理论上仍可读取。已保存的 `.txt` 在 `Android/data` 下：Android 11 起其他 App 无法访问，Android 10 及以下有存储权限的 App 可以读取。
 
 ## 与 Windows 版的差异
 
@@ -150,8 +160,9 @@ livebuddy-android/
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── java/com/faqxd/livesub/android/
-│       │   ├── LiveBuddyApp.kt                # Application 入口（加载字幕记录）
-│       │   ├── MainActivity.kt                # 启动 Activity + 权限流 + 字幕记录导出/清空
+│       │   ├── LiveBuddyApp.kt                # Application 入口（接管上次进程留下的字幕记录）
+│       │   ├── MainActivity.kt                # 启动 Activity + 权限流
+│       │   ├── TranscriptsActivity.kt         # 字幕记录：最近（保存 / 丢弃）+ 已保存（分享 / 删除）
 │       │   ├── SettingsActivity.kt            # 设置页
 │       │   ├── ConnectionTester.kt            # 设置页「测试连接」
 │       │   ├── data/
@@ -169,13 +180,13 @@ livebuddy-android/
 │       │   │   ├── LiveTileService.kt         # 快捷设置磁贴
 │       │   │   └── PipelineState.kt           # 服务 → 主界面的状态桥
 │       │   └── transcript/
-│       │       ├── TranscriptRecorder.kt      # 字幕记录（按会话、按停顿分段）
-│       │       ├── TranscriptStore.kt         # 进程级记录 + JSONL 追加落盘
-│       │       ├── TranscriptExporter.kt      # 导出 txt + 系统分享
+│       │       ├── TranscriptRecorder.kt      # 本次运行的字幕（按停顿分段）
+│       │       ├── TranscriptStore.kt         # 进程级记录：运行日志、最近与已保存
+│       │       ├── TranscriptExporter.kt      # 渲染 txt + 系统分享
 │       │       └── Sentences.kt               # 句子切分（只显示最新字幕）
 │       └── res/
 │           ├── drawable/                      # 背景、按钮、图标
-│           ├── layout/                        # activity_main / activity_settings / overlay_caption
+│           ├── layout/                        # 主界面 / 设置 / 字幕记录 / 悬浮窗
 │           ├── mipmap-anydpi-v26/             # 启动器图标
 │           └── values/                        # strings / colors / themes / styles
 ├── build.gradle.kts
@@ -204,7 +215,7 @@ JSON 解析使用 Android 框架自带的 `org.json`。
 - **前台服务通知**：Android 8+ 强制要求前台服务显示常驻通知，无法隐藏。
 - **悬浮窗与状态栏**：浮窗位置基于屏幕左上角，不受状态栏遮挡影响（使用 `FLAG_LAYOUT_NO_LIMITS`）。
 - **最小化和点击穿透状态不保存**：服务重新启动后悬浮窗总是展开且可触摸；位置和尺寸会保存。
-- **字幕记录**：保存在 App 私有目录，跨运行、进程被回收后都保留，每次服务运行是一个会话；悬浮窗的 Clear 只清屏幕上的字幕，不影响记录。在主界面点「清空记录」才会删除，最多保留 20000 条。
+- **字幕记录**：未保存的最多暂存 3 次运行，更早的会被自动删除，想留的要及时保存；悬浮窗的 Clear 只清屏幕上的字幕，不影响记录。已保存的 `.txt` 在 `Android/data` 下，**卸载 App 会一并删除**；Android 11 起大多数文件管理器看不到 `Android/data`（电脑 USB 连接可以），可用「分享」存到别处。
 - **会话换线**：服务端约每 10 分钟发出 goAway，App 会自动换到新会话；换线期间采集不停，最多缓存 5 秒音频，新会话就绪后补发。
 - **国内网络**：如直连 Google API 不通，可在 Settings 的 **API Base URL** 填入自建代理或区域镜像地址。注意 API Key 会随请求头发给该地址，只填自己信任的服务。
 
