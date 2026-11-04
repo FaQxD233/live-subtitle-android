@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of the transcript viewer; the text can be selected and copied. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/transcriptBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="8dp"
+        android:textColor="@color/text_primary_light"
+        android:textIsSelectable="true"
+        android:textSize="13sp" />
+</ScrollView>

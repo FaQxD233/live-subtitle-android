@@ -45,6 +45,12 @@
             android:label="@string/settings_title"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".TranscriptsActivity"
+            android:exported="false"
+            android:label="@string/transcripts"
+            android:parentActivityName=".MainActivity" />
+
         <!--
             Foreground service that runs the Gemini client + audio capture,
             and overlays the caption window via WindowManager.

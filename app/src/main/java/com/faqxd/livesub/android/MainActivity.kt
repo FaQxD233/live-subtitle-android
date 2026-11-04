@@ -13,21 +13,15 @@ import android.view.View
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.service.PipelineState
-import com.faqxd.livesub.android.transcript.TranscriptExporter
-import com.faqxd.livesub.android.transcript.TranscriptStore
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import kotlinx.coroutines.launch
 
 /**
  * Entry Activity.
@@ -132,10 +126,9 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         directionBtn.setOnClickListener { onDirectionToggleClicked() }
-        findViewById<View>(R.id.exportBtn).setOnClickListener {
-            lifecycleScope.launch { TranscriptExporter.shareHistory(this@MainActivity) }
+        findViewById<View>(R.id.transcriptsBtn).setOnClickListener {
+            startActivity(Intent(this, TranscriptsActivity::class.java))
         }
-        findViewById<View>(R.id.clearHistoryBtn).setOnClickListener { confirmClearHistory() }
 
         applySettingsToUi()
         // A recreated activity (rotation, process restore) must not start again.
@@ -239,18 +232,6 @@ class MainActivity : AppCompatActivity() {
             serviceRunning = s.running
             toggleBtn.text = getString(if (s.running) R.string.stop else R.string.start)
         }
-    }
-
-    /** Delete the recorded caption history after an explicit confirmation. */
-    private fun confirmClearHistory() {
-        MaterialAlertDialogBuilder(this)
-            .setMessage(R.string.clear_history_confirm)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.delete) { _, _ ->
-                TranscriptStore.clear()
-                Toast.makeText(this, R.string.clear_history_done, Toast.LENGTH_SHORT).show()
-            }
-            .show()
     }
 
     /** Show the newest caption line once the new text has been laid out. */

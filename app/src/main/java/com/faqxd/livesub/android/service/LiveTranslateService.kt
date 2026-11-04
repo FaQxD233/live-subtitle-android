@@ -74,9 +74,10 @@ class LiveTranslateService : Service() {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
-    // Captions are recorded into the process-wide [TranscriptStore] (one
-    // session per service run); it survives "Clear", restarts and process
-    // death, and the main screen can export or clear it.
+    // Captions are recorded into the process-wide [TranscriptStore], one
+    // session per service run; "Clear" doesn't touch it. The overlay exports
+    // the run so far, and when the service ends the run is kept for the
+    // transcript list (journaled, so it survives process death too).
 
     // Auto-reconnect state for unexpected WebSocket disconnects.
     private var reconnectJob: Job? = null
@@ -144,7 +145,7 @@ class LiveTranslateService : Service() {
         // field reference (see [prefsListener]).
         AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
         registerNetworkCallback()
-        // Captions of this run are exported under one session header.
+        // Captions of this run are recorded under one session header.
         TranscriptStore.startSession()
     }
 
@@ -303,11 +304,13 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Export the caption history (original and translation, time-stamped,
-     * grouped by session) as a text file via the share sheet.
+     * Export this run's captions so far (original and translation,
+     * time-stamped) as a text file via the share sheet.
      */
     private fun exportTranscript() {
-        scope.launch { TranscriptExporter.shareHistory(this@LiveTranslateService) }
+        scope.launch {
+            TranscriptExporter.shareTranscript(this@LiveTranslateService, TranscriptStore.snapshot())
+        }
     }
 
     override fun onDestroy() {
@@ -326,8 +329,11 @@ class LiveTranslateService : Service() {
         // stopPipeline() re-posts the status notification after the system
         // already dropped the foreground one; don't leave it behind.
         notificationManager.cancel(NOTIF_ID)
-        // Finish (and persist) the lines still in progress.
-        TranscriptStore.endSession()
+        // Finish (and persist) the lines still in progress, and keep the run
+        // for the transcript list unless it is too short or has no captions.
+        if (TranscriptStore.endSession()) {
+            Toast.makeText(applicationContext, R.string.transcript_kept, Toast.LENGTH_LONG).show()
+        }
         scope.coroutineContext[Job]?.cancel()
     }
 

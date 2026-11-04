@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_light"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/transcripts"
+            android:textColor="@color/text_primary_light"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <!-- RECENT: ended runs waiting to be saved or discarded. -->
+        <TextView
+            style="@style/SectionTitle"
+            android:layout_marginTop="8dp"
+            android:text="@string/transcripts_recent" />
+
+        <LinearLayout style="@style/SettingsCard">
+
+            <TextView
+                android:id="@+id/recentHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary_light"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/recentEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="@string/transcripts_empty"
+                android:textColor="@color/text_secondary_light"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/recentList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <!-- SAVED: text files in Android/data, newest first. -->
+        <TextView
+            style="@style/SectionTitle"
+            android:text="@string/transcripts_saved" />
+
+        <LinearLayout style="@style/SettingsCard">
+
+            <TextView
+                android:id="@+id/savedEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/transcripts_empty"
+                android:textColor="@color/text_secondary_light"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/savedList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/savedLocation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/text_secondary_light"
+            android:textIsSelectable="true"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>

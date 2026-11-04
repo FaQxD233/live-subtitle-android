@@ -12,8 +12,8 @@ import com.faqxd.livesub.android.transcript.TranscriptStore
 class LiveBuddyApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Load the caption history in the background, so both the service
-        // and the main screen (export / clear) see it.
+        // Before any run starts, keep what an earlier process left behind
+        // (an interrupted run, the old history) in the background.
         TranscriptStore.init(this)
     }
 }

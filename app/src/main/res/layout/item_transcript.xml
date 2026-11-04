@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One transcript in the caption records: tap the text to read it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:id="@+id/transcriptText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:background="?attr/selectableItemBackground"
+        android:orientation="vertical"
+        android:paddingVertical="10dp">
+
+        <TextView
+            android:id="@+id/transcriptTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary_light"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/transcriptSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_secondary_light"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/transcriptPrimaryBtn"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:minWidth="0dp"
+        android:paddingHorizontal="10dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/transcriptSecondaryBtn"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:paddingHorizontal="10dp" />
+</LinearLayout>

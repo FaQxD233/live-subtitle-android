@@ -1,8 +1,8 @@
 package com.faqxd.livesub.android.transcript
 
 /**
- * Caption history (original and translation), kept across service runs so
- * it can be exported.
+ * Captions (original and translation) of the service run in progress, so
+ * the run can be exported while it goes and kept once it ends.
  *
  * Segments are grouped into lines per stream: a pause longer than
  * [PAUSE_GAP_MS], a line running longer than [MAX_LINE_MS], or a new Live
@@ -10,7 +10,7 @@ package com.faqxd.livesub.android.transcript
  * that carry their own leading spaces (verified 2026-10-20 against the
  * translate model), so segments are appended verbatim. Each service run is
  * a session whose start is recorded once its first line is. Entries that
- * became final (session starts, closed lines) are handed to [onEntry] in
+ * became final (the session start, closed lines) are handed to [onEntry] in
  * that order, for persistence. Not thread-safe; main thread only.
  */
 class TranscriptRecorder(
@@ -30,40 +30,47 @@ class TranscriptRecorder(
     /** One caption line of [stream] that started at [at]. */
     data class Line(val stream: Stream, override val at: Long, val text: String) : Entry
 
+    /** A service run from [startedAt] to [endedAt] that recorded [lineCount] lines. */
+    data class EndedSession(val startedAt: Long, val endedAt: Long, val lineCount: Int) {
+        /** It has captions and lasted at least [MIN_KEPT_SESSION_MS]. */
+        val isWorthKeeping: Boolean
+            get() = lineCount > 0 && endedAt - startedAt >= MIN_KEPT_SESSION_MS
+    }
+
     /** Sink for entries that became final. */
     var onEntry: ((Entry) -> Unit)? = null
 
     private val entries = ArrayList<Entry>()
     private val tracks = Stream.values().associateWith { Track(it) }
-    private var sessionActive = false
-    // Start of the current session; recorded together with its first line,
-    // so a run without captions leaves no empty header behind.
-    private var pendingSessionAt = 0L
+    // Start of the session in progress; 0 while none runs.
+    private var sessionStartedAt = 0L
+    // The session start is recorded together with its first line, so a run
+    // without captions leaves no empty header behind.
+    private var headerPending = false
+    private var lineCount = 0
 
-    /** Put previously persisted entries (oldest first) before the current ones. */
-    fun restore(restored: List<Entry>) {
-        if (restored.isEmpty()) return
-        entries.addAll(0, restored)
-        trim()
-    }
-
-    /** A service run begins; its lines are exported under a session header. */
+    /** A service run begins; its lines are recorded under a session header. */
     fun startSession() {
-        breakLines()
-        sessionActive = true
-        pendingSessionAt = clock()
+        reset()
+        sessionStartedAt = clock()
+        headerPending = true
     }
 
-    /** The service run ends: finish the lines in progress. */
-    fun endSession() {
+    /**
+     * The service run ends: finish the lines in progress and forget the
+     * session. Null if none was in progress.
+     */
+    fun endSession(): EndedSession? {
+        if (sessionStartedAt == 0L) return null
         breakLines()
-        sessionActive = false
-        pendingSessionAt = 0L
+        val ended = EndedSession(sessionStartedAt, clock(), lineCount)
+        reset()
+        return ended
     }
 
-    /** Record one transcription segment for [stream]. */
+    /** Record one transcription segment for [stream]; ignored outside a session. */
     fun append(stream: Stream, segment: String) {
-        if (segment.isEmpty()) return
+        if (segment.isEmpty() || sessionStartedAt == 0L) return
         val now = clock()
         val track = tracks.getValue(stream)
         if (!track.isEmpty &&
@@ -81,21 +88,14 @@ class TranscriptRecorder(
         tracks.values.forEach { closeLine(it) }
     }
 
-    /** Forget everything; a running session continues under a new header. */
-    fun clear() {
-        entries.clear()
-        tracks.values.forEach { it.reset() }
-        pendingSessionAt = if (sessionActive) clock() else 0L
-    }
-
-    /** Every entry in time order, including the lines still being written. */
+    /** The session's entries in time order, including the lines still being written. */
     fun snapshot(): List<Entry> {
         val open = tracks.values
             .filterNot { it.isEmpty }
             .map { Line(it.stream, it.startedAt, it.text.toString().trim()) }
             .filter { it.text.isNotEmpty() }
-        val header = if (open.isNotEmpty() && pendingSessionAt > 0) {
-            listOf(Session(pendingSessionAt))
+        val header = if (open.isNotEmpty() && headerPending) {
+            listOf(Session(sessionStartedAt))
         } else {
             emptyList()
         }
@@ -108,21 +108,26 @@ class TranscriptRecorder(
         val startedAt = track.startedAt
         track.reset()
         if (text.isEmpty()) return
-        if (pendingSessionAt > 0) {
-            record(Session(pendingSessionAt))
-            pendingSessionAt = 0L
+        if (headerPending) {
+            record(Session(sessionStartedAt))
+            headerPending = false
         }
+        lineCount++
         record(Line(track.stream, startedAt, text))
     }
 
     private fun record(entry: Entry) {
         entries.add(entry)
-        trim()
+        if (entries.size > MAX_ENTRIES) entries.subList(0, entries.size - MAX_ENTRIES).clear()
         onEntry?.invoke(entry)
     }
 
-    private fun trim() {
-        if (entries.size > MAX_ENTRIES) entries.subList(0, entries.size - MAX_ENTRIES).clear()
+    private fun reset() {
+        entries.clear()
+        tracks.values.forEach { it.reset() }
+        sessionStartedAt = 0L
+        headerPending = false
+        lineCount = 0
     }
 
     private class Track(val stream: Stream) {
@@ -148,7 +153,12 @@ class TranscriptRecorder(
          * so a long monologue is timestamped and persisted in pieces.
          */
         const val MAX_LINE_MS = 30_000L
-        /** Safety cap for the whole history; the oldest entries go first. */
+        /** A run shorter than this is not kept once it ends. */
+        const val MIN_KEPT_SESSION_MS = 5_000L
+        /**
+         * Safety cap for the session's entries in memory (what the overlay
+         * exports); the oldest go first. The journal on disk keeps them all.
+         */
         const val MAX_ENTRIES = 20_000
     }
 }

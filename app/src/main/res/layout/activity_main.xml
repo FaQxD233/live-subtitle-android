@@ -162,29 +162,14 @@
             android:text="@string/open_settings" />
     </LinearLayout>
 
-    <!-- Caption history: available even while no translation runs. -->
-    <LinearLayout
+    <!-- Caption records: available even while no translation runs. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/transcriptsBtn"
+        style="@style/Widget.Material3.Button.TextButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:orientation="horizontal">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/exportBtn"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/overlay_export" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/clearHistoryBtn"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/clear_history" />
-    </LinearLayout>
+        android:text="@string/transcripts" />
 
     <TextView
         android:id="@+id/hintText"
