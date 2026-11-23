@@ -13,6 +13,16 @@
         <item name="android:textColorSecondary">@color/text_secondary_light</item>
     </style>
 
+    <!-- Transparent window for dialogs shown over other apps (export from the overlay). -->
+    <style name="Theme.LiveBuddy.Translucent">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    </style>
+
     <!-- Section title: small caps, accent color -->
     <style name="SectionTitle">
         <item name="android:layout_width">match_parent</item>

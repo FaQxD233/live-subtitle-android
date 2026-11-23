@@ -55,6 +55,11 @@
     <string name="export_chooser_title">导出字幕</string>
     <string name="export_empty">还没有可导出的字幕。</string>
     <string name="export_failed">导出失败：%1$s</string>
+    <string name="export_format_translation_srt">译文字幕（SRT）</string>
+    <string name="export_format_original_srt">原文字幕（SRT）</string>
+    <string name="export_format_text">双语文本（TXT）</string>
+    <string name="export_save_as">另存为…</string>
+    <string name="export_interrupted">导出被中断，请重试。</string>
     <string name="transcript_title">LiveBuddy 字幕记录</string>
     <string name="transcript_exported_at">导出时间：%1$s</string>
     <string name="transcript_session">—— 会话开始：%1$s ——</string>

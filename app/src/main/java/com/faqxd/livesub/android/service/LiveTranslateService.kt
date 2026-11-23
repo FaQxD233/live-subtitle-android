@@ -26,6 +26,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import com.faqxd.livesub.android.ExportActivity
 import com.faqxd.livesub.android.MainActivity
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.audio.AudioCapture
@@ -33,7 +34,6 @@ import com.faqxd.livesub.android.audio.AudioPlayer
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.gemini.GeminiClient
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
-import com.faqxd.livesub.android.transcript.TranscriptExporter
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
 import com.faqxd.livesub.android.transcript.TranscriptStore
 import kotlinx.coroutines.CoroutineScope
@@ -304,12 +304,23 @@ class LiveTranslateService : Service() {
     }
 
     /**
-     * Export this run's captions so far (original and translation,
-     * time-stamped) as a text file via the share sheet.
+     * Export this run's captions so far: the export dialog (subtitles or
+     * the text transcript, shared or saved) opens over the app in front.
      */
     private fun exportTranscript() {
-        scope.launch {
-            TranscriptExporter.shareTranscript(this@LiveTranslateService, TranscriptStore.snapshot())
+        if (TranscriptStore.snapshot().none { it is TranscriptRecorder.Line }) {
+            Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            ExportActivity.start(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "export dialog failed to open: ${e.message}")
+            Toast.makeText(
+                this,
+                getString(R.string.export_failed, e.message ?: e.javaClass.simpleName),
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 

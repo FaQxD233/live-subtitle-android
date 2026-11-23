@@ -52,6 +52,19 @@
             android:parentActivityName=".MainActivity" />
 
         <!--
+            Transparent host for the export dialog when the overlay exports
+            the run in progress. Its own task (empty affinity) keeps the main
+            screen from coming up behind it over the app in front.
+        -->
+        <activity
+            android:name=".ExportActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.LiveBuddy.Translucent" />
+
+        <!--
             Foreground service that runs the Gemini client + audio capture,
             and overlays the caption window via WindowManager.
         -->

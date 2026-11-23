@@ -54,6 +54,11 @@
     <string name="export_chooser_title">Export captions</string>
     <string name="export_empty">No captions to export yet.</string>
     <string name="export_failed">Export failed: %1$s</string>
+    <string name="export_format_translation_srt">Translation subtitles (SRT)</string>
+    <string name="export_format_original_srt">Original subtitles (SRT)</string>
+    <string name="export_format_text">Bilingual transcript (TXT)</string>
+    <string name="export_save_as">Save as…</string>
+    <string name="export_interrupted">The export was interrupted. Please try again.</string>
     <string name="transcript_title">LiveBuddy captions</string>
     <string name="transcript_exported_at">Exported: %1$s</string>
     <string name="transcript_session">—— Session started: %1$s ——</string>
