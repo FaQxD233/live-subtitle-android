@@ -116,8 +116,10 @@ class OverlayWindow(
      * Move the window with the finger (vertically only with
      * [verticalOnly]). Movement within the touch slop is ignored so a tap
      * doesn't nudge the window; with [clickOnTap] such a tap is forwarded
-     * to the view's click listener instead. [onDragEnd] runs after a drag.
-     * A window anchored at the bottom ([Gravity.BOTTOM]) counts y upwards.
+     * to the view's click listener instead. [onDragEnd] runs after a drag,
+     * also one the system cancels (say, the window was hidden under the
+     * finger). A window anchored at the bottom ([Gravity.BOTTOM]) counts y
+     * upwards.
      */
     fun dragListener(
         clickOnTap: Boolean = false,
@@ -152,8 +154,9 @@ class OverlayWindow(
                     update()
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (clickOnTap && !dragging) view.performClick()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val tapped = event.actionMasked == MotionEvent.ACTION_UP && !dragging
+                    if (clickOnTap && tapped) view.performClick()
                     if (dragging) onDragEnd()
                     true
                 }

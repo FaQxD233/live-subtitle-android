@@ -26,9 +26,11 @@ import kotlin.math.roundToInt
  * each other around:
  *  - the subtitle, styled like video captions: only the current one,
  *    centered, white with a black outline on a box whose opacity follows
- *    the background opacity setting, nothing between subtitles. It is
- *    placed by its bottom edge (a two-line subtitle grows upwards), drags
- *    up and down, and a tap brings the controls back;
+ *    the background opacity setting. Its window spans the screen width
+ *    (long subtitles wrap within it) and is placed by its bottom edge (a
+ *    two-line subtitle grows upwards); it is hidden between subtitles
+ *    ([showText]). Its row drags up and down, and a tap brings the
+ *    controls back;
  *  - the controls, a card in the caption overlay's style (time, lock,
  *    minimize, close; progress; previous / ±0.5 s / play / next, text
  *    size). Minimized, by hand or [AUTO_HIDE_MS] into playback, it folds
@@ -92,6 +94,12 @@ class SubtitlePlayerOverlay(
     private var cuesHtml = ""
     // What the subtitle window shows: the cues, the placeholder or nothing.
     private var shownKey = ""
+    // The subtitle window is hidden to grow until [reveal] shows it again.
+    private var revealPending = false
+    private val reveal = Runnable {
+        revealPending = false
+        if (shownKey.isNotEmpty()) textRoot.visibility = View.VISIBLE
+    }
     private val hideShift = Runnable { shiftLabel.text = "" }
     private val autoMinimize = Runnable { setExpanded(false) }
 
@@ -104,15 +112,16 @@ class SubtitlePlayerOverlay(
         get() = expanded
 
     init {
-        // The subtitle drags up and down; a tap brings the controls back.
-        box.setOnTouchListener(
+        // The subtitle's row, the whole window, drags up and down; a tap
+        // brings the controls back. Its empty parts would take touches anyway.
+        textRoot.setOnTouchListener(
             textWindow.dragListener(clickOnTap = true, verticalOnly = true) {
                 AppSettings.saveWindowGeometry(
                     context, AppSettings.WINDOW_SUBTITLE, textWindow.params.x, textWindow.params.y,
                 )
             }
         )
-        box.setOnClickListener { setExpanded(true) }
+        textRoot.setOnClickListener { setExpanded(true) }
 
         // The control window drags by the pill and the card's empty parts.
         val saveControls = {
@@ -170,13 +179,13 @@ class SubtitlePlayerOverlay(
     fun detach() {
         controlsRoot.removeCallbacks(autoMinimize)
         shiftLabel.removeCallbacks(hideShift)
+        textRoot.removeCallbacks(reveal)
         textWindow.detach()
         controlsWindow.detach()
     }
 
-    /** The screen size changed: rewrap the subtitle, keep both windows on screen. */
+    /** The screen size changed: keep both windows on screen (the subtitle rewraps by itself). */
     fun onScreenChanged() {
-        applyMaxWidth()
         textWindow.onScreenChanged()
         controlsWindow.onScreenChanged()
     }
@@ -285,7 +294,8 @@ class SubtitlePlayerOverlay(
         if (key == shownKey) return
         shownKey = key
         if (key.isEmpty()) {
-            box.visibility = View.GONE
+            // Hidden between subtitles, the window neither shows nor takes touches.
+            textRoot.visibility = View.INVISIBLE
             return
         }
         val content: CharSequence = if (placeholder) {
@@ -296,7 +306,56 @@ class SubtitlePlayerOverlay(
         outline.text = content
         text.text = content
         box.alpha = if (placeholder) PLACEHOLDER_ALPHA else 1f
-        box.visibility = View.VISIBLE
+        showText()
+    }
+
+    /**
+     * Show the subtitle window after its subtitle (or text size) changed.
+     * The window is placed by its bottom edge, so it moves whenever its
+     * height changes, and some devices then draw the new subtitle at the
+     * old place for a while: from a window shrunk to nothing between
+     * subtitles, that was low and to the right, half off the screen. A
+     * window that comes up is drawn before it shows, though. So the window
+     * is hidden between subtitles and takes the next one's height unseen;
+     * on screen, it never shrinks (a shorter subtitle sits at its bottom),
+     * and to grow it is hidden and shown again once that layout went
+     * through, two or three frames later.
+     */
+    private fun showText() {
+        // On screen as of the window's last layout: a gap between two
+        // subtitles shorter than a frame never hid it.
+        val onScreen = textRoot.windowVisibility == View.VISIBLE && textRoot.isLaidOut
+        when {
+            // Hidden to grow: it comes back with whatever is current then.
+            revealPending -> Unit
+            !onScreen -> {
+                textRoot.minimumHeight = 0
+                textRoot.visibility = View.VISIBLE
+            }
+            growsText() -> {
+                textRoot.visibility = View.INVISIBLE
+                revealPending = true
+                textRoot.doOnPreDraw { textRoot.post(reveal) }
+            }
+            else -> textRoot.visibility = View.VISIBLE
+        }
+    }
+
+    /**
+     * Whether the subtitle needs a taller window than the shown one. The
+     * window keeps at least its shown height either way.
+     */
+    private fun growsText(): Boolean {
+        val shownHeight = textRoot.height
+        box.measure(
+            View.MeasureSpec.makeMeasureSpec(
+                textRoot.width - textRoot.paddingLeft - textRoot.paddingRight,
+                View.MeasureSpec.AT_MOST,
+            ),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        textRoot.minimumHeight = maxOf(shownHeight, box.measuredHeight)
+        return box.measuredHeight > shownHeight
     }
 
     private fun applyStyle() {
@@ -306,22 +365,15 @@ class SubtitlePlayerOverlay(
         outline.paint.strokeWidth = outline.textSize * OUTLINE_WIDTH_RATIO
         outline.invalidate()
         box.background?.mutate()?.alpha = (settings.bgOpacity.coerceIn(0f, 1f) * 255).roundToInt()
-        applyMaxWidth()
+        // A larger text size may need a taller window, as a longer subtitle does.
+        if (textRoot.isShown) showText()
     }
 
-    /** Long subtitles wrap within the screen width minus the side margins. */
-    private fun applyMaxWidth() {
-        val width = context.resources.displayMetrics.widthPixels - 2 * sideMarginPx -
-            box.paddingLeft - box.paddingRight
-        outline.maxWidth = width
-        text.maxWidth = width
-    }
-
-    /** Centered, by its bottom edge: at the saved height or low on the screen. */
+    /** Across the screen, by its bottom edge: at the saved height or low on the screen. */
     private fun textLayoutParams(): WindowManager.LayoutParams {
         val metrics = context.resources.displayMetrics
         return OverlayWindow.layoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -341,7 +393,7 @@ class SubtitlePlayerOverlay(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
         ).apply {
-            x = if (settings.playerControlsX != Int.MIN_VALUE) settings.playerControlsX else sideMarginPx
+            x =if (settings.playerControlsX != Int.MIN_VALUE) settings.playerControlsX else sideMarginPx
             y = if (settings.playerControlsY != Int.MIN_VALUE) {
                 settings.playerControlsY
             } else {
@@ -353,6 +405,7 @@ class SubtitlePlayerOverlay(
     private fun clockText(ms: Long): String = DateUtils.formatElapsedTime(ms / 1000)
 
     private companion object {
+        /** The controls' distance from the left edge until they are dragged. */
         const val SIDE_MARGIN_DP = 16
         /** Where the subtitle's bottom edge starts, as a fraction of the screen height from the bottom. */
         const val DEFAULT_BOTTOM_FRACTION = 0.12f

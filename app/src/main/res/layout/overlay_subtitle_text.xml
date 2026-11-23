@@ -1,22 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     The subtitle player's text window: the current subtitle in video-caption
-    style (white text with a black outline, on an optional box). The window
-    wraps the box and is placed by its bottom edge, so a two-line subtitle
-    grows upwards; with the box gone it takes no room at all.
+    style (white text with a black outline, on an optional box), centered.
+    The window spans the screen width, so a long subtitle wraps within it
+    minus the side margins (a wrap-content window is first laid out at most
+    320dp wide, narrow in landscape), and a subtitle of another width
+    doesn't move it. It is placed by its bottom edge and the box sits at its
+    bottom, so a two-line subtitle grows upwards. Hidden until there is
+    something to show (see SubtitlePlayerOverlay.showText).
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
-    android:layout_height="wrap_content">
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="16dp"
+    android:visibility="invisible">
 
     <FrameLayout
         android:id="@+id/subtitleBox"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
         android:background="@drawable/subtitle_box_bg"
         android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:visibility="gone">
+        android:paddingVertical="4dp">
 
         <!-- The outline: drawn as a stroke under the fill. -->
         <TextView
