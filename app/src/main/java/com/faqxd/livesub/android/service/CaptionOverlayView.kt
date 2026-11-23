@@ -1,27 +1,19 @@
 package com.faqxd.livesub.android.service
 
 import android.content.Context
-import android.content.res.ColorStateList
-import android.graphics.PixelFormat
-import android.os.Build
-import android.util.Log
 import android.util.TypedValue
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.CaptionMode
 import com.faqxd.livesub.android.transcript.latestSentences
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -45,6 +37,8 @@ import kotlin.math.roundToInt
  *    keep updating in the background and show up again when expanded.
  *  - Can let touches pass through to the app underneath
  *    ([setClickThrough]); a small unlock button stays tappable.
+ * The window mechanics (dragging, keeping on screen, click-through) live
+ * in [OverlayWindow], shared with the subtitle player.
  *
  * All public methods must be called on the main thread.
  */
@@ -87,12 +81,9 @@ class CaptionOverlayView(
     private var expandedWidth = 0
     private var expandedHeight = 0
 
-    // ---- Click-through state ----
     /** True while touches pass through the HUD to the app below. */
-    var isClickThrough = false
-        private set
-    // Separate small window over the lock button that turns the mode off.
-    private var unlockButton: View? = null
+    val isClickThrough: Boolean
+        get() = initialized && window.isClickThrough
 
     // ---- View references ----
     private lateinit var rootView: View
@@ -123,11 +114,7 @@ class CaptionOverlayView(
     private lateinit var miniStatusDot: View
     private lateinit var miniLabel: TextView
 
-    private val windowManager: WindowManager =
-        context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
     private val density: Float = context.resources.displayMetrics.density
-    private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
     /** How close to the bottom still counts as "following" new captions. */
     private val followSlopPx: Int = (24 * density).toInt()
 
@@ -139,11 +126,11 @@ class CaptionOverlayView(
     private val maxWidthPx: Int = (720 * density).toInt()
     private val maxHeightPx: Int = (640 * density).toInt()
 
-    private var layoutParams: WindowManager.LayoutParams = buildLayoutParams()
-    private var attached = false
+    // The floating window showing [rootView]; created by init().
+    private lateinit var window: OverlayWindow
+    private val layoutParams: WindowManager.LayoutParams
+        get() = window.params
     private var initialized = false
-
-    val isAttached: Boolean get() = attached
 
     /** Latest caption texts, for the main-screen status bridge. */
     val currentOutput: String get() = if (initialized) outputView.text.toString() else ""
@@ -153,6 +140,7 @@ class CaptionOverlayView(
     fun init() {
         if (initialized) return
         rootView = View.inflate(context, R.layout.overlay_caption, null)
+        window = OverlayWindow(context, rootView, buildLayoutParams())
         overlayRoot = rootView.findViewById(R.id.overlayRoot)
         header = rootView.findViewById(R.id.overlayHeader)
         statusDot = rootView.findViewById(R.id.overlayStatusDot)
@@ -203,12 +191,10 @@ class CaptionOverlayView(
     /** Add the overlay to the screen. Requires SYSTEM_ALERT_WINDOW permission. */
     fun attach() {
         if (!initialized) init()
-        if (attached) return
-        // Clamp the (possibly restored) geometry into the current screen.
-        keepOnScreen()
+        if (window.isAttached) return
         try {
-            windowManager.addView(rootView, layoutParams)
-            attached = true
+            // Clamps the (possibly restored) geometry into the current screen.
+            window.attach()
         } catch (e: Exception) {
             // Most likely: SYSTEM_ALERT_WINDOW permission not granted.
             throw RuntimeException("Failed to add overlay window: ${e.message}", e)
@@ -216,12 +202,7 @@ class CaptionOverlayView(
     }
 
     fun detach() {
-        removeUnlockButton()
-        if (!attached) return
-        try {
-            windowManager.removeView(rootView)
-        } catch (_: Exception) {}
-        attached = false
+        if (initialized) window.detach()
     }
 
     // ---------- public API (mirrors HUDWindow) ----------
@@ -361,7 +342,7 @@ class CaptionOverlayView(
         } else {
             layoutParams.width = expandedWidth
             layoutParams.height = expandedHeight
-            keepOnScreen()
+            window.keepOnScreen()
             persistGeometry()
         }
         val cardVisibility = if (minimized) View.GONE else View.VISIBLE
@@ -377,28 +358,15 @@ class CaptionOverlayView(
 
     /**
      * Let touches pass through the HUD to the app underneath (or stop).
-     *
-     * Android 12+ blocks touches that pass through an app overlay unless the
-     * window's opacity is at most [CLICK_THROUGH_WINDOW_ALPHA], so the whole
-     * window is dimmed slightly while the mode is on. The HUD itself can't
-     * be touched then, so a separate small unlock button is placed over the
-     * lock button to switch back.
+     * The whole window is dimmed slightly while the mode is on (an Android
+     * 12+ requirement, see [OverlayWindow.setClickThrough]), and a small
+     * unlock button over the lock button switches back.
      */
     fun setClickThrough(enabled: Boolean) {
-        if (!attached || enabled == isClickThrough) return
-        isClickThrough = enabled
-        val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        if (enabled) {
-            layoutParams.flags = layoutParams.flags or notTouchable
-            layoutParams.alpha = CLICK_THROUGH_WINDOW_ALPHA
-            showUnlockButton()
-        } else {
-            layoutParams.flags = layoutParams.flags and notTouchable.inv()
-            layoutParams.alpha = 1f
-            removeUnlockButton()
+        if (!initialized) return
+        if (window.setClickThrough(enabled, clickThroughBtn) { setClickThrough(false) }) {
+            callbacks.onClickThroughChanged(enabled)
         }
-        updateWindowLayout()
-        callbacks.onClickThroughChanged(enabled)
     }
 
     private fun updateDirectionUi(s: AppSettings) {
@@ -496,107 +464,17 @@ class CaptionOverlayView(
     }
 
     /** Push [layoutParams] to the window; no-op while detached. */
-    private fun updateWindowLayout() {
-        if (!attached) return
-        try {
-            windowManager.updateViewLayout(rootView, layoutParams)
-        } catch (_: Exception) {}
-    }
-
-    /** Clamp the window position and size so the whole card stays on screen
-     * (also covers a restored geometry after rotation / resolution change). */
-    private fun keepOnScreen() {
-        val metrics = context.resources.displayMetrics
-        // While minimized the params are WRAP_CONTENT (negative); clamp
-        // explicit sizes only and measure the pill for the position bounds.
-        if (layoutParams.width > 0) {
-            layoutParams.width = layoutParams.width.coerceAtMost(metrics.widthPixels)
-        }
-        if (layoutParams.height > 0) {
-            layoutParams.height = layoutParams.height.coerceAtMost(metrics.heightPixels)
-        }
-        val width = if (layoutParams.width > 0) layoutParams.width else rootView.width
-        val height = if (layoutParams.height > 0) layoutParams.height else rootView.height
-        val maxX = (metrics.widthPixels - width).coerceAtLeast(0)
-        val maxY = (metrics.heightPixels - height).coerceAtLeast(0)
-        layoutParams.x = layoutParams.x.coerceIn(0, maxX)
-        layoutParams.y = layoutParams.y.coerceIn(0, maxY)
-    }
+    private fun updateWindowLayout() = window.update()
 
     /**
      * The screen size changed (rotation, fold, resolution): pull the window
-     * back on screen, otherwise a HUD placed low in portrait can end up
-     * entirely off-screen in landscape, where it can't be dragged back. The
-     * clamped geometry is not persisted, so rotating back restores the
-     * user's own placement on the next start.
+     * back on screen (see [OverlayWindow.onScreenChanged]). The clamped
+     * geometry is not persisted, so rotating back restores the user's own
+     * placement on the next start.
      */
     fun onScreenChanged() {
-        if (!attached) return
-        keepOnScreen()
-        updateWindowLayout()
-        if (isClickThrough) {
-            // The unlock button sits over the lock button; re-place it once
-            // the moved (and possibly narrowed) HUD has been laid out.
-            removeUnlockButton()
-            rootView.doOnPreDraw { if (isClickThrough && unlockButton == null) showUnlockButton() }
-        }
+        if (initialized) window.onScreenChanged()
     }
-
-    /**
-     * Show the unlock button exactly where the lock button is. It is its own
-     * (touchable) window, positioned in the same coordinate space as the
-     * HUD, so it lines up while the non-touchable HUD can't move.
-     */
-    private fun showUnlockButton() {
-        val location = IntArray(2)
-        clickThroughBtn.getLocationInWindow(location)
-        val padding = (6 * density).toInt()
-        val button = ImageButton(context).apply {
-            setImageResource(R.drawable.ic_overlay_unlock)
-            imageTintList = ColorStateList.valueOf(context.getColor(R.color.hud_text_primary))
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setBackgroundResource(R.drawable.overlay_btn_primary)
-            setPadding(padding, padding, padding, padding)
-            contentDescription = context.getString(R.string.overlay_click_through_off)
-            setOnClickListener { setClickThrough(false) }
-        }
-        val params = WindowManager.LayoutParams(
-            clickThroughBtn.width,
-            clickThroughBtn.height,
-            overlayWindowType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = layoutParams.x + location[0]
-            y = layoutParams.y + location[1]
-        }
-        try {
-            windowManager.addView(button, params)
-            unlockButton = button
-        } catch (e: Exception) {
-            // The notification action still offers a way out.
-            Log.w(TAG, "unlock button attach failed: ${e.message}")
-        }
-    }
-
-    private fun removeUnlockButton() {
-        unlockButton?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (_: Exception) {}
-        }
-        unlockButton = null
-    }
-
-    private fun overlayWindowType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
         // Restore persisted geometry when valid, else the 360x320 default
@@ -611,16 +489,7 @@ class CaptionOverlayView(
         } else {
             (320 * density).toInt()
         }
-        return WindowManager.LayoutParams(
-            widthPx,
-            heightPx,
-            overlayWindowType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
+        return OverlayWindow.layoutParams(widthPx, heightPx).apply {
             x = if (settings.overlayX != Int.MIN_VALUE) settings.overlayX else 40
             y = if (settings.overlayY != Int.MIN_VALUE) settings.overlayY else 200
         }
@@ -634,7 +503,7 @@ class CaptionOverlayView(
      * eventFilter on `card + output_edit + input_edit`.
      */
     private fun installDragHandler() {
-        val listener = makeDragListener()
+        val listener = window.dragListener { persistGeometry() }
         // Install on the whole card body + the header. ScrollView children
         // (outputScroll / inputScroll) keep their own touch handling so the
         // user can still scroll through caption history — same as the
@@ -643,51 +512,7 @@ class CaptionOverlayView(
         overlayRoot.setOnTouchListener(listener)
         header.setOnTouchListener(listener)
         // The minimized pill drags the same way; a tap expands it.
-        miniPill.setOnTouchListener(makeDragListener(clickOnTap = true))
-    }
-
-    /**
-     * Move the window with the finger. Movement within the touch slop is
-     * ignored so a tap doesn't nudge the window; with [clickOnTap] such a
-     * tap is forwarded to the view's click listener instead.
-     */
-    private fun makeDragListener(clickOnTap: Boolean = false): View.OnTouchListener {
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var dragging = false
-
-        return View.OnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = layoutParams.x
-                    initialY = layoutParams.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    dragging = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    if (!dragging && abs(dx) < touchSlop && abs(dy) < touchSlop) {
-                        return@OnTouchListener true
-                    }
-                    dragging = true
-                    layoutParams.x = initialX + dx.toInt()
-                    layoutParams.y = initialY + dy.toInt()
-                    updateWindowLayout()
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (clickOnTap && !dragging) view.performClick()
-                    if (dragging) persistGeometry()
-                    true
-                }
-                else -> false
-            }
-        }
+        miniPill.setOnTouchListener(window.dragListener(clickOnTap = true) { persistGeometry() })
     }
 
     /** Write the current window geometry to prefs (drag/resize end). While
@@ -696,8 +521,8 @@ class CaptionOverlayView(
     private fun persistGeometry() {
         val width = if (isMinimized && expandedWidth > 0) expandedWidth else layoutParams.width
         val height = if (isMinimized && expandedHeight > 0) expandedHeight else layoutParams.height
-        AppSettings.saveOverlayGeometry(
-            context, layoutParams.x, layoutParams.y, width, height,
+        AppSettings.saveWindowGeometry(
+            context, AppSettings.WINDOW_OVERLAY, layoutParams.x, layoutParams.y, width, height,
         )
     }
 
@@ -786,7 +611,6 @@ class CaptionOverlayView(
     }
 
     companion object {
-        private const val TAG = "CaptionOverlay"
         private const val MAX_STATUS_CHARS = 80
         /**
          * Newest-kept characters of each caption history. Equal for both
@@ -796,11 +620,5 @@ class CaptionOverlayView(
         private const val MAX_CAPTION_CHARS = 3000
         /** Cap per shown sentence in latest-only mode (no punctuation). */
         private const val LATEST_ONLY_CHARS_PER_SENTENCE = 200
-        /**
-         * Highest window opacity for which Android 12+ still lets touches
-         * pass through an app overlay (the platform default maximum
-         * obscuring opacity for touches).
-         */
-        private const val CLICK_THROUGH_WINDOW_ALPHA = 0.8f
     }
 }

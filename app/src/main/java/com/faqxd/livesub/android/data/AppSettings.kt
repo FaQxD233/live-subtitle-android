@@ -222,24 +222,35 @@ data class AppSettings(
         fun normalizeDirection(raw: String): String =
             if (raw == "b2a") "b2a" else "a2b"
 
+        /** Key prefix of the caption overlay's geometry. */
+        const val WINDOW_OVERLAY = "overlay"
+
         /**
-         * Persist only the overlay geometry keys. The overlay holds its own
-         * settings snapshot which may lag behind unrelated changes, so it
-         * must not write the whole [AppSettings] back.
+         * Persist only the geometry keys of the floating [window] (see
+         * [WINDOW_OVERLAY]); the size only when given. A floating window
+         * holds its own settings snapshot which may lag behind unrelated
+         * changes, so it must not write the whole [AppSettings] back.
          */
-        fun saveOverlayGeometry(context: Context, x: Int, y: Int, width: Int, height: Int) {
+        fun saveWindowGeometry(
+            context: Context,
+            window: String,
+            x: Int,
+            y: Int,
+            width: Int? = null,
+            height: Int? = null,
+        ) {
             prefs(context).edit {
-                putInt("overlay_x", x)
-                putInt("overlay_y", y)
-                putInt("overlay_width", width)
-                putInt("overlay_height", height)
+                putInt("${window}_x", x)
+                putInt("${window}_y", y)
+                width?.let { putInt("${window}_width", it) }
+                height?.let { putInt("${window}_height", it) }
             }
         }
     }
 
     /**
      * Persist the user-facing settings. The overlay geometry is owned by
-     * [saveOverlayGeometry] and deliberately not written here, so a screen
+     * [saveWindowGeometry] and deliberately not written here, so a screen
      * saving an older snapshot can't move the window back. Callers should
      * start from a fresh [load] so other fields changed meanwhile survive.
      */
