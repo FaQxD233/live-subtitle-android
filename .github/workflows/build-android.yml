@@ -67,6 +67,10 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Run unit tests
+        shell: bash
+        run: gradle --no-daemon testDebugUnitTest
+
       - name: Decode release signing key
         id: keystore
         shell: bash
