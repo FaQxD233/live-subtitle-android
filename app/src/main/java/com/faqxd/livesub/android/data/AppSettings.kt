@@ -51,6 +51,7 @@ enum class CaptionMode(val key: String) {
  *                          for one-way translation (no direction swap).
  *  - liveDirection       — Two-way only: "a2b" outputs the target language,
  *                          "b2a" outputs the pair language.
+ *  - subtitleFontSize    — Text size of the subtitle player, in sp.
  */
 data class AppSettings(
     var apiKey: String = "",
@@ -73,6 +74,9 @@ data class AppSettings(
     var overlayY: Int = Int.MIN_VALUE,
     var overlayWidth: Int = Int.MIN_VALUE,
     var overlayHeight: Int = Int.MIN_VALUE,
+    // The subtitle player's own settings, saved by their own functions.
+    var subtitleFontSize: Int = DEFAULT_SUBTITLE_FONT_SIZE,
+    var subtitleY: Int = Int.MIN_VALUE,
 ) {
     val normalizedTargetLanguage: String
         get() = normalizeTargetLanguage(targetLanguage)
@@ -118,7 +122,12 @@ data class AppSettings(
         const val DEFAULT_LIVE_MODEL = "gemini-3.5-live-translate-preview"
         /** Upper bound of [latestSentenceCount]. */
         const val MAX_LATEST_SENTENCES = 3
+        /** Range and default of [subtitleFontSize], in sp. */
+        const val MIN_SUBTITLE_FONT_SIZE = 12
+        const val MAX_SUBTITLE_FONT_SIZE = 40
+        const val DEFAULT_SUBTITLE_FONT_SIZE = 20
         private const val PREFS_NAME = "livebuddy_settings"
+        private const val KEY_PLAYER_HINT_SHOWN = "player_hint_shown"
 
         /** Backing preferences file for [load] / [save]; also for change listeners. */
         fun prefs(context: Context): SharedPreferences =
@@ -186,6 +195,9 @@ data class AppSettings(
                 overlayY = prefs.getInt("overlay_y", Int.MIN_VALUE),
                 overlayWidth = prefs.getInt("overlay_width", Int.MIN_VALUE),
                 overlayHeight = prefs.getInt("overlay_height", Int.MIN_VALUE),
+                subtitleFontSize = prefs.getInt("subtitle_font_size", DEFAULT_SUBTITLE_FONT_SIZE)
+                    .coerceIn(MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE),
+                subtitleY = prefs.getInt("${WINDOW_SUBTITLE}_y", Int.MIN_VALUE),
             )
         }
 
@@ -224,6 +236,23 @@ data class AppSettings(
 
         /** Key prefix of the caption overlay's geometry. */
         const val WINDOW_OVERLAY = "overlay"
+        /** Key prefix of the subtitle player's position. */
+        const val WINDOW_SUBTITLE = "subtitle"
+
+        /** Persist the subtitle player's text size only (see [saveWindowGeometry] for why). */
+        fun saveSubtitleFontSize(context: Context, size: Int) {
+            prefs(context).edit {
+                putInt("subtitle_font_size", size.coerceIn(MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE))
+            }
+        }
+
+        /** True the first time it is asked: whether the player's usage hint is still to be shown. */
+        fun takePlayerHint(context: Context): Boolean {
+            val prefs = prefs(context)
+            if (prefs.getBoolean(KEY_PLAYER_HINT_SHOWN, false)) return false
+            prefs.edit { putBoolean(KEY_PLAYER_HINT_SHOWN, true) }
+            return true
+        }
 
         /**
          * Persist only the geometry keys of the floating [window] (see

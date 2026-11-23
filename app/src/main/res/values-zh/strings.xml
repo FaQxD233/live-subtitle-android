@@ -88,6 +88,32 @@
     <string name="transcript_open_failed">无法打开字幕记录：%1$s</string>
     <string name="close">关闭</string>
 
+    <!-- Subtitle player -->
+    <string name="player_open_file">播放字幕文件</string>
+    <string name="player_play">播放</string>
+    <string name="player_choose_stream">播放哪一路字幕？</string>
+    <string name="player_channel_name">字幕播放</string>
+    <string name="player_notif_title">字幕播放</string>
+    <string name="player_notif_playing">播放中 · %1$s</string>
+    <string name="player_notif_paused">已暂停 · %1$s</string>
+    <string name="player_unlock">解锁</string>
+    <string name="player_lock">锁定：触摸传到下层应用</string>
+    <string name="player_locked_hint">已锁定，触摸会传到下层应用。点解锁按钮或通知栏里的「解锁」恢复控制条。</string>
+    <string name="player_previous">上一句</string>
+    <string name="player_next">下一句</string>
+    <string name="player_back">后退 0.5 秒（字幕推后）</string>
+    <string name="player_forward">前进 0.5 秒（字幕提前）</string>
+    <string name="player_smaller">缩小字幕</string>
+    <string name="player_larger">放大字幕</string>
+    <string name="player_shifted_later">字幕推后 %1$s 秒</string>
+    <string name="player_shifted_earlier">字幕提前 %1$s 秒</string>
+    <string name="player_hint">视频开始时点「播放」。字幕慢了，听到那句话时点「下一句」；字幕快了，等人开口说这句时点「上一句」。</string>
+    <string name="player_no_cues">这个文件里没有找到字幕。</string>
+    <string name="player_file_too_large">文件太大（超过 %1$d MB）。</string>
+    <string name="player_open_failed">无法打开文件：%1$s</string>
+    <string name="player_stopped_live">已停止实时翻译，改为播放字幕。</string>
+    <string name="live_stopped_player">已关闭字幕播放，改为实时翻译。</string>
+
     <!-- Settings -->
     <string name="section_connection">连接设置</string>
     <string name="section_audio">音频设置</string>

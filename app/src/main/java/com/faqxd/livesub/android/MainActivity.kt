@@ -13,15 +13,23 @@ import android.view.View
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.data.CaptionMode
+import com.faqxd.livesub.android.player.SubtitleFiles
+import com.faqxd.livesub.android.player.SubtitlePlayerService
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.service.PipelineState
 import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Entry Activity.
@@ -91,6 +99,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Any file: many document providers know no MIME type for .ass / .ssa.
+    private val subtitleFileLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) playSubtitleFile(uri)
+    }
+
     private fun startServiceWithProjection(resultCode: Int, data: Intent?) {
         ContextCompat.startForegroundService(
             this,
@@ -128,6 +143,14 @@ class MainActivity : AppCompatActivity() {
         directionBtn.setOnClickListener { onDirectionToggleClicked() }
         findViewById<View>(R.id.transcriptsBtn).setOnClickListener {
             startActivity(Intent(this, TranscriptsActivity::class.java))
+        }
+        findViewById<View>(R.id.playSubtitleBtn).setOnClickListener {
+            try {
+                subtitleFileLauncher.launch(arrayOf("*/*"))
+            } catch (e: Exception) {
+                // No document picker on this device.
+                showToast(getString(R.string.player_open_failed, e.message ?: e.javaClass.simpleName))
+            }
         }
 
         applySettingsToUi()
@@ -346,6 +369,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun showHint(text: String) {
         hintText.text = text
+    }
+
+    private fun showToast(text: String) {
+        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+    }
+
+    /** Read the subtitle file at [uri] and play it over other apps. */
+    private fun playSubtitleFile(uri: Uri) {
+        lifecycleScope.launch {
+            val loaded = try {
+                withContext(Dispatchers.IO) {
+                    SubtitleFiles.title(this@MainActivity, uri) to SubtitleFiles.read(this@MainActivity, uri)
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                showToast(
+                    if (e is SubtitleFiles.TooLargeException) {
+                        getString(R.string.player_file_too_large, SubtitleFiles.MAX_BYTES / (1024 * 1024))
+                    } else {
+                        getString(R.string.player_open_failed, e.message ?: e.javaClass.simpleName)
+                    }
+                )
+                return@launch
+            }
+            val (title, cues) = loaded
+            if (cues.isEmpty()) {
+                showToast(getString(R.string.player_no_cues))
+                return@launch
+            }
+            SubtitlePlayerService.play(this@MainActivity, title, cues)
+        }
     }
 
     companion object {

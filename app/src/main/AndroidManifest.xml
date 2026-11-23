@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Foreground service: subtitle player (plays no audio or video, so special use) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Floating overlay window (Android 6.0+) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Network access to Gemini Live API -->
@@ -72,6 +74,20 @@
             android:name=".service.LiveTranslateService"
             android:exported="false"
             android:foregroundServiceType="microphone|mediaProjection" />
+
+        <!--
+            Plays a subtitle file the user picked over other apps (for videos
+            without subtitles). It plays no audio or video itself, so it is a
+            special-use foreground service rather than media playback.
+        -->
+        <service
+            android:name=".player.SubtitlePlayerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a subtitle file the user picked on top of other apps, timed by the user to the video they are watching." />
+        </service>
 
         <!-- Quick Settings tile: start / stop the translation pipeline. -->
         <service

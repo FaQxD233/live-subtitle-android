@@ -33,6 +33,7 @@ import com.faqxd.livesub.android.audio.AudioCapture
 import com.faqxd.livesub.android.audio.AudioPlayer
 import com.faqxd.livesub.android.data.AppSettings
 import com.faqxd.livesub.android.gemini.GeminiClient
+import com.faqxd.livesub.android.player.SubtitlePlayerService
 import com.faqxd.livesub.android.service.CaptionOverlayView.StatusKind
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
 import com.faqxd.livesub.android.transcript.TranscriptStore
@@ -239,6 +240,11 @@ class LiveTranslateService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                // Live translation and the subtitle player both float over
+                // other apps: starting one stops the other.
+                if (stopService(Intent(this, SubtitlePlayerService::class.java))) {
+                    Toast.makeText(this, R.string.live_stopped_player, Toast.LENGTH_LONG).show()
+                }
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 @Suppress("DEPRECATION")
                 val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)

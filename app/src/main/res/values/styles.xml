@@ -8,4 +8,35 @@
         <item name="android:layout_marginTop">4dp</item>
         <item name="android:orientation">vertical</item>
     </style>
+
+    <!--
+        A layer of the subtitle player's text. The outline and the fill are
+        two such layers with identical layout, so they line up exactly; the
+        padding leaves room for the outline's stroke.
+    -->
+    <style name="SubtitleText">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">center</item>
+        <item name="android:padding">2dp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- A small button of the subtitle player's control bar. -->
+    <style name="SubtitleControl">
+        <item name="android:layout_width">36dp</item>
+        <item name="android:layout_height">32dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
+        <item name="android:background">@drawable/overlay_btn_secondary</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:padding">6dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/hud_text_primary</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:tint">@color/hud_text_primary</item>
+    </style>
 </resources>

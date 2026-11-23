@@ -87,6 +87,37 @@
     <string name="transcript_open_failed">Can\'t open the transcript: %1$s</string>
     <string name="close">Close</string>
 
+    <!-- Subtitle player -->
+    <string name="player_open_file">Play subtitle file</string>
+    <string name="player_play">Play</string>
+    <string name="player_choose_stream">Play which subtitles?</string>
+    <string name="player_channel_name">Subtitle player</string>
+    <string name="player_notif_title">Subtitle player</string>
+    <string name="player_notif_playing">Playing · %1$s</string>
+    <string name="player_notif_paused">Paused · %1$s</string>
+    <string name="player_unlock">Unlock</string>
+    <string name="player_lock">Lock: let touches reach the app below</string>
+    <string name="player_locked_hint">Locked: touches now reach the app below. Tap the unlock button or Unlock in the notification to get the controls back.</string>
+    <string name="player_previous">Previous line</string>
+    <string name="player_next">Next line</string>
+    <string name="player_back">Back 0.5 s (subtitles later)</string>
+    <string name="player_forward">Forward 0.5 s (subtitles earlier)</string>
+    <string name="player_smaller">Smaller subtitles</string>
+    <string name="player_larger">Larger subtitles</string>
+    <string name="player_shifted_later">Subtitles %1$s s later</string>
+    <string name="player_shifted_earlier">Subtitles %1$s s earlier</string>
+    <string name="player_hint">Tap Play when the video starts. If a line shows late, tap Next line when you hear it; if it shows early, tap Previous line when it is spoken.</string>
+    <string name="player_no_cues">No subtitles found in this file.</string>
+    <string name="player_file_too_large">The file is too large (over %1$d MB).</string>
+    <string name="player_open_failed">Can\'t open the file: %1$s</string>
+    <string name="player_stopped_live">Live translation was stopped to play subtitles.</string>
+    <string name="live_stopped_player">Subtitle playback was closed for live translation.</string>
+    <string name="player_time" translatable="false">%1$s / %2$s</string>
+    <string name="player_back_label" translatable="false">−0.5</string>
+    <string name="player_forward_label" translatable="false">+0.5</string>
+    <string name="player_smaller_label" translatable="false">A−</string>
+    <string name="player_larger_label" translatable="false">A+</string>
+
     <!-- Settings -->
     <string name="section_connection">CONNECTION</string>
     <string name="section_audio">AUDIO</string>

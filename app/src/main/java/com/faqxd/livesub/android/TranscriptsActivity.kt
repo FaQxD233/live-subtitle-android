@@ -1,6 +1,7 @@
 package com.faqxd.livesub.android
 
 import android.os.Bundle
+import android.text.TextUtils
 import android.text.format.DateUtils
 import android.text.format.Formatter
 import android.view.Menu
@@ -12,6 +13,8 @@ import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
+import com.faqxd.livesub.android.player.SubtitlePlayerService
+import com.faqxd.livesub.android.transcript.TranscriptCues
 import com.faqxd.livesub.android.transcript.TranscriptExporter
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
 import com.faqxd.livesub.android.transcript.TranscriptStore
@@ -101,6 +104,7 @@ class TranscriptsActivity : AppCompatActivity() {
                     save(item)
                 },
                 more = listOf(
+                    playAction(item),
                     exportAction(item),
                     Action(R.string.transcript_discard) {
                         confirm(R.string.transcript_discard_confirm, R.string.transcript_discard) {
@@ -125,8 +129,8 @@ class TranscriptsActivity : AppCompatActivity() {
                     record = item,
                     title = runTitle(item),
                     subtitle = item.preview,
-                    primary = exportAction(item),
-                    more = listOf(deleteAction),
+                    primary = playAction(item),
+                    more = listOf(exportAction(item), deleteAction),
                 )
                 is TranscriptStore.TextFile -> addRow(
                     list = savedList,
@@ -147,6 +151,8 @@ class TranscriptsActivity : AppCompatActivity() {
     }
 
     private fun exportAction(item: TranscriptStore.Journal) = Action(R.string.transcript_export) { export(item) }
+
+    private fun playAction(item: TranscriptStore.Journal) = Action(R.string.player_play) { play(item) }
 
     /**
      * Add a row for [record] to [list]: tap its text to read it; on the
@@ -213,6 +219,43 @@ class TranscriptsActivity : AppCompatActivity() {
             val entries = readEntries(item) ?: return@launch
             exportDialog.show(entries)
         }
+    }
+
+    /**
+     * Play [item] as subtitles over other apps: its translation or its
+     * original, asking which when it has both.
+     */
+    private fun play(item: TranscriptStore.Journal) {
+        lifecycleScope.launch {
+            val entries = readEntries(item) ?: return@launch
+            val streams = listOf(TranscriptRecorder.Stream.TRANSLATION, TranscriptRecorder.Stream.ORIGINAL)
+                .filter { stream -> entries.any { it is TranscriptRecorder.Line && it.stream == stream } }
+            when (streams.size) {
+                // A kept run always has captions.
+                0 -> {}
+                1 -> playStream(item, entries, streams[0])
+                else -> MaterialAlertDialogBuilder(this@TranscriptsActivity)
+                    .setTitle(R.string.player_choose_stream)
+                    .setItems(
+                        arrayOf(
+                            getString(R.string.transcript_label_translation),
+                            getString(R.string.transcript_label_original),
+                        )
+                    ) { _, which -> playStream(item, entries, streams[which]) }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun playStream(
+        item: TranscriptStore.Journal,
+        entries: List<TranscriptRecorder.Entry>,
+        stream: TranscriptRecorder.Stream,
+    ) {
+        // Recorded captions are plain text; the player renders HTML.
+        val cues = TranscriptCues.build(entries, stream).map { it.copy(text = TextUtils.htmlEncode(it.text)) }
+        SubtitlePlayerService.play(this, runTitle(item), cues)
     }
 
     /** The entries of [item], or null (with a toast) if it can't be read any more. */

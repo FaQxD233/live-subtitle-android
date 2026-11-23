@@ -162,14 +162,29 @@
             android:text="@string/open_settings" />
     </LinearLayout>
 
-    <!-- Caption records: available even while no translation runs. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/transcriptsBtn"
-        style="@style/Widget.Material3.Button.TextButton"
+    <!-- Caption records and the subtitle player: available even while no translation runs. -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="@string/transcripts" />
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/transcriptsBtn"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/transcripts" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/playSubtitleBtn"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/player_open_file" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/hintText"
