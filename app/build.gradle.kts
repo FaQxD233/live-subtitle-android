@@ -99,4 +99,7 @@ dependencies {
 
     // JSON parsing uses the org.json classes built into the Android
     // framework; a bundled copy would be shadowed by them at runtime.
+
+    // JVM unit tests for the pure Kotlin caption / subtitle logic.
+    testImplementation("junit:junit:4.13.2")
 }

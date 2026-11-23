@@ -343,6 +343,7 @@ object TranscriptStore {
             .put("stream", entry.stream.name)
             .put("at", entry.at)
             .put("text", entry.text)
+            .apply { entry.end?.let { put("end", it) } }
     }
 
     private fun decode(raw: String): TranscriptRecorder.Entry? = try {
@@ -354,6 +355,8 @@ object TranscriptStore {
                 TranscriptRecorder.Stream.valueOf(o.getString("stream")),
                 o.getLong("at"),
                 o.getString("text"),
+                // Journals written before end times were recorded have none.
+                if (o.has("end")) o.getLong("end") else null,
             )
         }
     } catch (_: Exception) {
