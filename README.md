@@ -11,7 +11,9 @@
 - 78 种目标语言（官方 Live Translate 支持列表，同时显示语言自身的名称和英文名，如「日本語 · Japanese」，可按两者或代码搜索）
 - 默认单向翻译（全部翻成一种语言）；可选双向对话，一键在两种输出语言之间切换
 - 字幕内容三档：仅译文 / 双语 / 仅原文；可只显示最新 1–3 句
-- 字幕记录：每次运行结束后自动暂存（最多 3 次，不足 5 秒或没有字幕的不暂存），可在主界面的「字幕记录」里永久保存为 `.txt`，再查看、分享或删除
+- 字幕记录：每次运行结束后自动暂存（最多 3 次，不足 5 秒或没有字幕的不暂存），可在主界面的「字幕记录」里永久保存，再查看、导出、播放或删除
+- 导出字幕：可选译文字幕（`.srt`）、原文字幕（`.srt`）或双语文本（`.txt`），通过系统分享发送，或「另存为」直接存到下载等目录
+- 字幕播放：打开自己的 `.srt` / `.vtt` / `.ass` 字幕文件（或某条字幕记录），以视频字幕的样式叠加在 YouTube 等没有字幕的视频上，手动对齐
 - 快捷设置磁贴一键开始 / 停止
 - Live 模型可配置；设置页可测试连接
 - API Base URL 可自定义（走代理或自建中转）
@@ -45,6 +47,7 @@
 | `SYSTEM_ALERT_WINDOW`        | 浮动字幕窗口（Display over other apps） |
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE` | 后台持续采集麦克风 |
 | `FOREGROUND_SERVICE_MEDIA_PROJECTION` | 系统音频 loopback（仅当选择 "system" 音源时） |
+| `FOREGROUND_SERVICE_SPECIAL_USE` | 字幕播放（只显示字幕，不播放音视频，属于特殊用途前台服务） |
 | `POST_NOTIFICATIONS`         | 前台服务通知（Android 13+）             |
 | `INTERNET`                   | 连接 Gemini Live API                   |
 | `ACCESS_NETWORK_STATE`       | 断网恢复后立即重连                      |
@@ -67,7 +70,12 @@ gradle assembleDebug
 
 # 安装到已连接设备
 gradle installDebug
+
+# 运行单元测试（字幕分段、SRT 生成、字幕文件解析、播放时钟）
+gradle testDebugUnitTest
 ```
+
+CI（`Build Android`）在打包前会先跑单元测试。
 
 生成的 APK 在 `app/build/outputs/apk/debug/app-debug.apk`。
 
@@ -106,7 +114,7 @@ gradle installDebug
 - **只显示最新字幕**：Settings 中开启后只显示最新的 1–3 句（句数可选），按句末标点切分
 - **背景不透明度**：只作用于卡片背景，字幕文字始终不透明；调到 0 即透明背景
 - **点击穿透**：点控制条的锁形按钮后，触摸会穿过悬浮窗传到下层应用（例如视频播放器的控件），此时悬浮窗略变透明——这是 Android 12+ 对可穿透悬浮窗的要求（窗口不透明度不超过 80%）。点原位置出现的解锁按钮，或通知栏里的“退出点击穿透”恢复
-- **导出字幕**：点控制条的导出按钮，把本次运行到目前为止的原文和译文按停顿分段、带时间戳导出为 `.txt`，通过系统分享发送或保存。停止后这次运行会进入「字幕记录」
+- **导出字幕**：点控制条的导出按钮，导出本次运行到目前为止的字幕。可选译文字幕（SRT）、原文字幕（SRT）或双语文本（TXT），没有内容的格式不出现；选「分享」走系统分享，选「另存为」直接存到下载等目录。会记住上次选的格式。停止后这次运行会进入「字幕记录」
 - **控制条**：Pause/Start · Clear · 字幕内容 · 点击穿透 · 导出 · Settings
 
 前台服务通知里有 **Pause/Start** 和 **Stop** 两个按钮。
@@ -115,9 +123,28 @@ gradle installDebug
 
 从开始到停止算一次运行，中途的暂停、换线、重连都算在同一次里。主界面的 **字幕记录** 按运行管理字幕：
 
-- **最近（未保存）**：运行结束时，有字幕且不少于 5 秒的会自动暂存在这里，最多 3 条，新的替换最旧的。每条可以 **保存** 或 **丢弃**。运行中 App 被强行停止的那次，下次打开 App 时补进来
-- **已保存**：保存后渲染成 `.txt`，按开始时间倒序排列，每条可以 **分享**（系统分享面板）或 **删除**
+- **最近（未保存）**：运行结束时，有字幕且不少于 5 秒的会自动暂存在这里，最多 3 条，新的替换最旧的。每条可以 **保存**，「更多」菜单里还有 **播放**、**导出…** 和 **丢弃**。运行中 App 被强行停止的那次，下次打开 App 时补进来
+- **已保存**：按开始时间倒序排列，每条可以 **播放**，「更多」菜单里有 **导出…** 和 **删除**。保存的是这次运行的完整记录（每句的起止时间、原文和译文），随时可以再导出成任意一种格式
+- 旧版本保存的 `.txt` 也列在「已保存」里，可以查看、**分享**、删除，但不能播放（txt 里没有每句的结束时间）
 - 点一条记录可以在 App 内查看全文，文字可选中复制
+
+字幕按句记录：每路（原文、译文）满一句（至少 1.5 秒）就切一条；停顿超过 2 秒、一条超过 6 秒或约两行字也会切开。导出的 SRT 以按下「开始」的那一刻为 00:00:00，时间是文字到达手机的时间，比原声晚 1–3 秒（翻译延迟），暂停的时间也算在内，拿去配视频时需要整体对齐一次（见下一节的「上一句 / 下一句」）。
+
+## 字幕播放
+
+给没有字幕的视频（比如 YouTube）配上自己的字幕：
+
+1. 主界面点 **播放字幕文件**，选一个 `.srt`、`.vtt`、`.ass` 或 `.ssa` 文件；也可以在「字幕记录」里点某条记录的 **播放**（同时有原文和译文时会问播放哪一路）
+2. 字幕显示在屏幕下方，白字黑边，只显示当前这一句，两句之间不显示。背景框的深浅跟随设置里的「背景不透明度」，调到 0 就只剩描边
+3. 打开时处于暂停状态。切到视频 App，视频开始时点 **▶**
+4. 对齐：字幕慢了（人已经说了，字幕还没出来），听到那句话时点 **下一句**；字幕快了，等人开口说这句时点 **上一句**（当前这句已显示超过 1 秒时回到它的开头，否则回到上一句）。**−0.5 / +0.5** 是把时间往回 / 往前拨 0.5 秒（字幕推后 / 提前），进度条可以直接拖动
+5. **A− / A+** 调字号，下次打开时保留。上下拖动字幕或控制条的空白处可以移动位置，位置会保存
+6. 对齐后点右上角的锁形按钮锁定：控制条收起，触摸穿透到下层（照样能点视频 App 的控件），字幕略变透明（Android 12+ 对可穿透悬浮窗的要求）。点原位置的解锁按钮，或通知栏里的「解锁」恢复
+7. 通知栏有 **播放/暂停**、**解锁**、**停止**。播放到最后一句结束后自动暂停
+
+字幕播放和实时翻译不能同时运行：开始其中一个会自动停止另一个，并弹出提示。
+
+格式与编码：支持 SRT、WebVTT 和 ASS/SSA（ASS 只取文字，样式、位置、特效和绘图都忽略），保留斜体、粗体、下划线。编码自动识别：带 BOM 的 UTF-8 / UTF-16，不带 BOM 的 UTF-16、UTF-8，其余按 GB18030（兼容 GBK、GB2312）读取。文件不能超过 5 MB。
 
 ## 配置
 
@@ -132,10 +159,11 @@ gradle installDebug
 ```
 /data/data/com.faqxd.livesub.android/files/session.jsonl                           # 进行中的运行
 /data/data/com.faqxd.livesub.android/files/transcripts/recent/                     # 最近（未保存）
-/storage/emulated/0/Android/data/com.faqxd.livesub.android/files/transcripts/      # 已保存的 .txt
+/data/data/com.faqxd.livesub.android/files/transcripts/saved/                      # 已保存
+/storage/emulated/0/Android/data/com.faqxd.livesub.android/files/transcripts/      # 旧版本保存的 .txt
 ```
 
-**注意**：API key 和字幕记录都以明文存储。App 已禁用 Android 系统备份，避免它们随 Auto Backup 进入云端备份；但 root 设备上的其他进程理论上仍可读取。已保存的 `.txt` 在 `Android/data` 下：Android 11 起其他 App 无法访问，Android 10 及以下有存储权限的 App 可以读取。
+**注意**：API key 和字幕记录都以明文存储。App 已禁用 Android 系统备份，避免它们随 Auto Backup 进入云端备份；但 root 设备上的其他进程理论上仍可读取。旧版本保存的 `.txt` 在 `Android/data` 下：Android 11 起其他 App 无法访问，Android 10 及以下有存储权限的 App 可以读取。
 
 ## 与 Windows 版的差异
 
@@ -161,8 +189,10 @@ livebuddy-android/
 │       ├── AndroidManifest.xml
 │       ├── java/com/faqxd/livesub/android/
 │       │   ├── LiveBuddyApp.kt                # Application 入口（接管上次进程留下的字幕记录）
-│       │   ├── MainActivity.kt                # 启动 Activity + 权限流
-│       │   ├── TranscriptsActivity.kt         # 字幕记录：最近（保存 / 丢弃）+ 已保存（分享 / 删除）
+│       │   ├── MainActivity.kt                # 启动 Activity + 权限流 + 打开字幕文件
+│       │   ├── TranscriptsActivity.kt         # 字幕记录：最近（保存 / 丢弃）+ 已保存（播放 / 导出 / 删除）
+│       │   ├── ExportDialog.kt                # 导出对话框：SRT / TXT，分享或另存为
+│       │   ├── ExportActivity.kt              # 悬浮窗导出时承载导出对话框的透明 Activity
 │       │   ├── SettingsActivity.kt            # 设置页
 │       │   ├── ConnectionTester.kt            # 设置页「测试连接」
 │       │   ├── data/
@@ -177,16 +207,30 @@ livebuddy-android/
 │       │   ├── service/
 │       │   │   ├── LiveTranslateService.kt    # 前台服务 + 流程编排（重连、goAway 换线）
 │       │   │   ├── CaptionOverlayView.kt      # 浮动字幕 View
+│       │   │   ├── OverlayWindow.kt           # 悬浮窗公共部分：拖动、限制在屏幕内、点击穿透
 │       │   │   ├── LiveTileService.kt         # 快捷设置磁贴
 │       │   │   └── PipelineState.kt           # 服务 → 主界面的状态桥
+│       │   ├── player/
+│       │   │   ├── SubtitlePlayerService.kt   # 字幕播放前台服务：时钟、通知、与实时翻译互斥
+│       │   │   ├── SubtitlePlayerOverlay.kt   # 视频字幕样式的悬浮窗 + 控制条
+│       │   │   ├── SubtitlePlayback.kt        # 交给播放服务的字幕（进程内）
+│       │   │   └── SubtitleFiles.kt           # 读取用户选的字幕文件
+│       │   ├── subtitle/
+│       │   │   ├── SubtitleCue.kt             # 一条字幕（起止时间 + 文字）
+│       │   │   ├── SubtitleParser.kt          # 解析 SRT / WebVTT / ASS
+│       │   │   ├── SubtitleText.kt            # 编码识别、标签清理
+│       │   │   ├── SrtWriter.kt               # 生成 SRT
+│       │   │   ├── CueTimeline.kt             # 某一时刻显示哪几条、上一句 / 下一句
+│       │   │   └── SubtitleClock.kt           # 播放时钟
 │       │   └── transcript/
-│       │       ├── TranscriptRecorder.kt      # 本次运行的字幕（按停顿分段）
+│       │       ├── TranscriptRecorder.kt      # 本次运行的字幕（按句切成带起止时间的字幕条）
 │       │       ├── TranscriptStore.kt         # 进程级记录：运行日志、最近与已保存
-│       │       ├── TranscriptExporter.kt      # 渲染 txt + 系统分享
-│       │       └── Sentences.kt               # 句子切分（只显示最新字幕）
+│       │       ├── TranscriptCues.kt          # 记录 → 字幕条（导出 SRT、播放）
+│       │       ├── TranscriptExporter.kt      # 渲染 SRT / txt + 系统分享 / 另存为
+│       │       └── Sentences.kt               # 句子切分（录制分段、只显示最新字幕）
 │       └── res/
 │           ├── drawable/                      # 背景、按钮、图标
-│           ├── layout/                        # 主界面 / 设置 / 字幕记录 / 悬浮窗
+│           ├── layout/                        # 主界面 / 设置 / 字幕记录 / 悬浮窗 / 字幕播放
 │           ├── mipmap-anydpi-v26/             # 启动器图标
 │           └── values/                        # strings / colors / themes / styles
 ├── build.gradle.kts
@@ -194,6 +238,8 @@ livebuddy-android/
 ├── gradle.properties
 └── gradle/wrapper/gradle-wrapper.properties
 ```
+
+JVM 单元测试在 `app/src/test/`。
 
 ## 依赖
 
@@ -205,6 +251,7 @@ livebuddy-android/
 | `material`                      | Material Components（Button / CardView）   |
 | `kotlinx-coroutines-android`   | 协程                                       |
 | `okhttp3`                       | Gemini Live WebSocket 客户端                |
+| `junit`（仅测试）                | JVM 单元测试                                |
 
 JSON 解析使用 Android 框架自带的 `org.json`。
 
@@ -215,7 +262,9 @@ JSON 解析使用 Android 框架自带的 `org.json`。
 - **前台服务通知**：Android 8+ 强制要求前台服务显示常驻通知，无法隐藏。
 - **悬浮窗与状态栏**：浮窗位置基于屏幕左上角，不受状态栏遮挡影响（使用 `FLAG_LAYOUT_NO_LIMITS`）。
 - **最小化和点击穿透状态不保存**：服务重新启动后悬浮窗总是展开且可触摸；位置和尺寸会保存。
-- **字幕记录**：未保存的最多暂存 3 次运行，更早的会被自动删除，想留的要及时保存；悬浮窗的 Clear 只清屏幕上的字幕，不影响记录。已保存的 `.txt` 在 `Android/data` 下，**卸载 App 会一并删除**；Android 11 起大多数文件管理器看不到 `Android/data`（电脑 USB 连接可以），可用「分享」存到别处。
+- **字幕记录**：未保存的最多暂存 3 次运行，更早的会被自动删除，想留的要及时保存；悬浮窗的 Clear 只清屏幕上的字幕，不影响记录。已保存的记录在 App 私有目录里，**卸载 App 会一并删除**；要留文件，用「导出… → 另存为」存到下载等目录。
+- **导出的 SRT 时间**：以按下「开始」为零点，用的是文字到达手机的时间，比原声晚 1–3 秒，暂停的那段也算在内。配视频用时先整体对齐。
+- **字幕播放靠手动对齐**：播放器有自己的时钟，不会跟着视频 App 暂停或拖动；视频暂停或跳转后，要在播放器里同样操作，或用「上一句 / 下一句」重新对齐。不带 BOM 的日文 Shift-JIS、繁体 Big5 字幕会被当成 GB18030 读成乱码，先转成 UTF-8 再打开。
 - **会话换线**：服务端约每 10 分钟发出 goAway，App 会自动换到新会话；换线期间采集不停，最多缓存 5 秒音频，新会话就绪后补发。
 - **国内网络**：如直连 Google API 不通，可在 Settings 的 **API Base URL** 填入自建代理或区域镜像地址。注意 API Key 会随请求头发给该地址，只填自己信任的服务。
 
