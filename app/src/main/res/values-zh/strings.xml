@@ -98,7 +98,7 @@
     <string name="player_notif_paused">已暂停 · %1$s</string>
     <string name="player_unlock">解锁</string>
     <string name="player_lock">锁定：触摸传到下层应用</string>
-    <string name="player_locked_hint">已锁定，点在字幕上的触摸会传到下层应用。要解锁，点小胶囊展开控制栏再点解锁按钮，或用通知栏里的「解锁」。</string>
+    <string name="player_locked_hint">已锁定，触摸会传到下层应用。在屏幕任意位置双击可暂停 / 继续字幕。要解锁，点小胶囊展开控制栏再点解锁按钮，或用通知栏里的「解锁」。</string>
     <string name="player_placeholder">字幕显示在这里 · 可上下拖动</string>
     <string name="player_previous">上一句</string>
     <string name="player_next">下一句</string>

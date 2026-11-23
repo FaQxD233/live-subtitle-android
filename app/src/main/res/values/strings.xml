@@ -97,7 +97,7 @@
     <string name="player_notif_paused">Paused · %1$s</string>
     <string name="player_unlock">Unlock</string>
     <string name="player_lock">Lock: let touches reach the app below</string>
-    <string name="player_locked_hint">Locked: touches on the subtitle now reach the app below. To unlock, tap the small pill and then the unlock button, or use Unlock in the notification.</string>
+    <string name="player_locked_hint">Locked: touches reach the app below. Double-tap anywhere to pause or resume the subtitles. To unlock, tap the small pill and then the unlock button, or use Unlock in the notification.</string>
     <string name="player_placeholder">Subtitles show here · drag up or down</string>
     <string name="player_previous">Previous line</string>
     <string name="player_next">Next line</string>

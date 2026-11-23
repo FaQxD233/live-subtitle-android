@@ -5,7 +5,9 @@ import android.graphics.Paint
 import android.text.format.DateUtils
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -37,7 +39,8 @@ import kotlin.math.roundToInt
  *    into a small pill that a tap expands. It drags anywhere.
  * Locking lets touches pass through the subtitle to the app below (the
  * controls fold up); the pill then shows a lock, and the card's lock
- * button unlocks.
+ * button unlocks. Locked, a double tap anywhere plays or pauses
+ * ([onOutsideTouch]).
  *
  * Main thread only.
  */
@@ -102,6 +105,8 @@ class SubtitlePlayerOverlay(
     }
     private val hideShift = Runnable { shiftLabel.text = "" }
     private val autoMinimize = Runnable { setExpanded(false) }
+    // When the last touch outside the controls went down, while locked; 0 after a double tap.
+    private var lastOutsideDown = 0L
 
     /** True while touches pass through the subtitle to the app below. */
     val isLocked: Boolean
@@ -132,6 +137,11 @@ class SubtitlePlayerOverlay(
         pill.setOnTouchListener(controlsWindow.dragListener(clickOnTap = true, onDragEnd = saveControls))
         pill.setOnClickListener { setExpanded(true) }
         card.setOnTouchListener(controlsWindow.dragListener(onDragEnd = saveControls))
+        // Touches going down in the app below arrive here as ACTION_OUTSIDE.
+        controlsRoot.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) onOutsideTouch(event.eventTime)
+            false
+        }
 
         control(R.id.playerPrevBtn) { callbacks.onPreviousClicked() }
         control(R.id.playerNextBtn) { callbacks.onNextClicked() }
@@ -270,6 +280,26 @@ class SubtitlePlayerOverlay(
         touched()
     }
 
+    /**
+     * A touch went down outside the controls, in the app below. Locked, two
+     * in quick succession play or pause, as a double tap does in many video
+     * apps. Android tells an overlay only when a touch that goes to another
+     * app went down, not where (the coordinates come zeroed), so this is a
+     * double tap anywhere on the screen, timed from down to down: a tap's
+     * length plus the double-tap timeout.
+     */
+    private fun onOutsideTouch(downTime: Long) {
+        if (!isLocked) return
+        val doubleTapMs = ViewConfiguration.getTapTimeout() + ViewConfiguration.getDoubleTapTimeout()
+        if (downTime - lastOutsideDown <= doubleTapMs) {
+            // A third touch starts the next double tap.
+            lastOutsideDown = 0L
+            callbacks.onPlayPauseClicked()
+        } else {
+            lastOutsideDown = downTime
+        }
+    }
+
     /** The controls were used: restart the countdown to folding them up (playing only). */
     private fun touched() {
         controlsRoot.removeCallbacks(autoMinimize)
@@ -393,7 +423,9 @@ class SubtitlePlayerOverlay(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
         ).apply {
-            x =if (settings.playerControlsX != Int.MIN_VALUE) settings.playerControlsX else sideMarginPx
+            // Learns when a touch goes down in the app below (see onOutsideTouch).
+            flags = flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+            x = if (settings.playerControlsX != Int.MIN_VALUE) settings.playerControlsX else sideMarginPx
             y = if (settings.playerControlsY != Int.MIN_VALUE) {
                 settings.playerControlsY
             } else {
