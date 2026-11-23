@@ -110,9 +110,12 @@ object SubtitleParser {
         return ((hours.ifEmpty { "0" }.toLong() * 60 + minutes.toLong()) * 60 + seconds.toLong()) * 1000 + ms
     }
 
+    // Android's regex engine is ICU, which rejects a literal "{" or "}"
+    // outside a character class unless it is escaped (the desktop JVM, and
+    // so the unit tests, accept it). Escape brackets too, to be safe.
     private val TIME = Regex("""(?:(\d{1,3}):)?(\d{1,2}):(\d{1,2})(?:[,.](\d+))?""")
-    private val ASS_SECTION = Regex("""^\s*\[(Script Info|Events)]""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
-    private val ASS_BLOCK = Regex("""\{[^}]*}""")
+    private val ASS_SECTION = Regex("""^\s*\[(Script Info|Events)\]""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
+    private val ASS_BLOCK = Regex("""\{[^}]*\}""")
     private val ASS_DRAWING = Regex("""\{[^}]*\\p[1-9]""")
     /** Columns of a Dialogue line when the Format line is missing (ASS v4+ / SSA v4). */
     private val DEFAULT_ASS_COLUMNS =

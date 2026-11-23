@@ -8,7 +8,16 @@ import java.nio.charset.CodingErrorAction
 /** Decoding subtitle files and cleaning up their cue text. */
 object SubtitleText {
 
-    private val GB18030: Charset = Charset.forName("GB18030")
+    /**
+     * GB18030 (a superset of GBK and GB2312). Android only guarantees the
+     * UTF and ISO-8859-1 / ASCII charsets, and a failure here would break
+     * this object for good, so a device without it falls back to UTF-8.
+     */
+    private val GB18030: Charset = try {
+        Charset.forName("GB18030")
+    } catch (_: Exception) {
+        Charsets.UTF_8
+    }
 
     /**
      * The text of a subtitle file. A byte order mark decides (UTF-8,
