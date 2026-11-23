@@ -3,12 +3,14 @@ package com.faqxd.livesub.android
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.text.format.Formatter
+import android.view.Menu
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
 import androidx.lifecycle.lifecycleScope
 import com.faqxd.livesub.android.transcript.TranscriptExporter
 import com.faqxd.livesub.android.transcript.TranscriptRecorder
@@ -23,10 +25,14 @@ import java.util.Locale
 
 /**
  * Caption records: the recent runs, which the user saves or discards, and
- * the saved transcripts, which can be shared or deleted. Tapping a row
- * shows the whole transcript.
+ * the saved ones, which can be exported (as subtitles or text) or deleted,
+ * plus the text transcripts earlier versions saved. Tapping a row shows
+ * the whole transcript.
  */
 class TranscriptsActivity : AppCompatActivity() {
+
+    /** A row action: its label and what it does with the tapped view. */
+    private class Action(@StringRes val label: Int, val perform: (View) -> Unit)
 
     private lateinit var recentList: LinearLayout
     private lateinit var recentEmpty: View
@@ -34,6 +40,7 @@ class TranscriptsActivity : AppCompatActivity() {
     private lateinit var savedEmpty: View
     private lateinit var savedLocation: TextView
     private val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    private val exportDialog = ExportDialog(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,70 +73,92 @@ class TranscriptsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val recent = TranscriptStore.recent()
             val saved = TranscriptStore.saved()
-            val location = TranscriptStore.savedLocation()
             showRecent(recent)
             showSaved(saved)
-            savedLocation.text = location
-                ?.let { getString(R.string.transcripts_saved_location, it.absolutePath) }
-                ?: getString(R.string.transcripts_storage_unavailable)
+            // Only the text transcripts of earlier versions live in shared storage.
+            val location = if (saved.any { it is TranscriptStore.TextFile }) {
+                TranscriptStore.textLocation()
+            } else {
+                null
+            }
+            savedLocation.text = location?.let { getString(R.string.transcripts_saved_location, it.absolutePath) }
+            savedLocation.visibility = if (location != null) View.VISIBLE else View.GONE
         }
     }
 
-    private fun showRecent(items: List<TranscriptStore.Recent>) {
+    private fun showRecent(items: List<TranscriptStore.Journal>) {
         recentList.removeAllViews()
         recentEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         for (item in items) {
-            val duration = DateUtils.formatElapsedTime((item.endedAt - item.startedAt) / 1000)
             addRow(
                 list = recentList,
                 record = item,
-                title = "${dateTime.format(Date(item.startedAt))} · $duration",
+                title = runTitle(item),
                 subtitle = item.preview,
-                primaryText = R.string.save,
-                onPrimary = { button ->
+                primary = Action(R.string.save) { button ->
                     // Once is enough; the list is rebuilt afterwards.
                     button.isEnabled = false
                     save(item)
                 },
-                secondaryText = R.string.transcript_discard,
-                onSecondary = {
-                    confirm(R.string.transcript_discard_confirm, R.string.transcript_discard) {
-                        delete(item)
-                    }
-                },
+                more = listOf(
+                    exportAction(item),
+                    Action(R.string.transcript_discard) {
+                        confirm(R.string.transcript_discard_confirm, R.string.transcript_discard) {
+                            delete(item)
+                        }
+                    },
+                ),
             )
         }
     }
 
-    private fun showSaved(items: List<TranscriptStore.Saved>) {
+    private fun showSaved(items: List<TranscriptStore.Record>) {
         savedList.removeAllViews()
         savedEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         for (item in items) {
-            addRow(
-                list = savedList,
-                record = item,
-                title = dateTime.format(Date(item.startedAt)),
-                subtitle = Formatter.formatShortFileSize(this, item.size),
-                primaryText = R.string.transcript_share,
-                onPrimary = { TranscriptExporter.shareFile(this, item.file) },
-                secondaryText = R.string.delete,
-                onSecondary = {
-                    confirm(R.string.transcript_delete_confirm, R.string.delete) { delete(item) }
-                },
-            )
+            val deleteAction = Action(R.string.delete) {
+                confirm(R.string.transcript_delete_confirm, R.string.delete) { delete(item) }
+            }
+            when (item) {
+                is TranscriptStore.Journal -> addRow(
+                    list = savedList,
+                    record = item,
+                    title = runTitle(item),
+                    subtitle = item.preview,
+                    primary = exportAction(item),
+                    more = listOf(deleteAction),
+                )
+                is TranscriptStore.TextFile -> addRow(
+                    list = savedList,
+                    record = item,
+                    title = dateTime.format(Date(item.startedAt)),
+                    subtitle = Formatter.formatShortFileSize(this, item.size),
+                    primary = Action(R.string.transcript_share) { TranscriptExporter.shareFile(this, item.file) },
+                    more = listOf(deleteAction),
+                )
+            }
         }
     }
 
-    /** Add a row for [record] to [list]: tap its text to read it, two actions on the right. */
+    /** "Start date and time · duration" of a kept run. */
+    private fun runTitle(item: TranscriptStore.Journal): String {
+        val duration = DateUtils.formatElapsedTime((item.endedAt - item.startedAt) / 1000)
+        return "${dateTime.format(Date(item.startedAt))} · $duration"
+    }
+
+    private fun exportAction(item: TranscriptStore.Journal) = Action(R.string.transcript_export) { export(item) }
+
+    /**
+     * Add a row for [record] to [list]: tap its text to read it; on the
+     * right the [primary] action and a menu with the [more] ones.
+     */
     private fun addRow(
         list: LinearLayout,
         record: TranscriptStore.Record,
         title: String,
         subtitle: String,
-        @StringRes primaryText: Int,
-        onPrimary: (View) -> Unit,
-        @StringRes secondaryText: Int,
-        onSecondary: () -> Unit,
+        primary: Action,
+        more: List<Action>,
     ) {
         val row = layoutInflater.inflate(R.layout.item_transcript, list, false)
         row.findViewById<TextView>(R.id.transcriptTitle).text = title
@@ -139,17 +168,25 @@ class TranscriptsActivity : AppCompatActivity() {
         }
         row.findViewById<View>(R.id.transcriptText).setOnClickListener { showText(title, record) }
         row.findViewById<MaterialButton>(R.id.transcriptPrimaryBtn).apply {
-            setText(primaryText)
-            setOnClickListener { onPrimary(it) }
+            setText(primary.label)
+            setOnClickListener { primary.perform(it) }
         }
-        row.findViewById<MaterialButton>(R.id.transcriptSecondaryBtn).apply {
-            setText(secondaryText)
-            setOnClickListener { onSecondary() }
+        row.findViewById<View>(R.id.transcriptMoreBtn).apply {
+            visibility = if (more.isEmpty()) View.GONE else View.VISIBLE
+            setOnClickListener { anchor ->
+                val popup = PopupMenu(this@TranscriptsActivity, anchor)
+                more.forEachIndexed { index, action -> popup.menu.add(Menu.NONE, index, index, action.label) }
+                popup.setOnMenuItemClickListener { menuItem ->
+                    more[menuItem.itemId].perform(anchor)
+                    true
+                }
+                popup.show()
+            }
         }
         list.addView(row)
     }
 
-    private fun save(item: TranscriptStore.Recent) {
+    private fun save(item: TranscriptStore.Journal) {
         lifecycleScope.launch {
             try {
                 TranscriptStore.save(this@TranscriptsActivity, item)
@@ -169,6 +206,26 @@ class TranscriptsActivity : AppCompatActivity() {
             reload()
         }
     }
+
+    /** Offer the formats to export [item] as. */
+    private fun export(item: TranscriptStore.Journal) {
+        lifecycleScope.launch {
+            val entries = readEntries(item) ?: return@launch
+            exportDialog.show(entries)
+        }
+    }
+
+    /** The entries of [item], or null (with a toast) if it can't be read any more. */
+    private suspend fun readEntries(item: TranscriptStore.Journal): List<TranscriptRecorder.Entry>? =
+        try {
+            TranscriptStore.readEntries(this, item)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            showError(R.string.transcript_open_failed, e)
+            // It may have been replaced by a newer run meanwhile.
+            reload()
+            null
+        }
 
     /** Show [record] in full; the text can be selected and copied. */
     private fun showText(title: String, record: TranscriptStore.Record) {

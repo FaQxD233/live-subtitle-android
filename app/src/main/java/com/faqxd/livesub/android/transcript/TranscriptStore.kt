@@ -16,15 +16,17 @@ import org.json.JSONObject
 /**
  * Process-wide caption records. The service records each run (one session)
  * into it; when the run ends it is kept as a recent transcript, at most
- * [MAX_RECENT] of them, until the user saves it as a text file or discards
- * it. The transcript list works on them even while no service runs.
+ * [MAX_RECENT] of them, until the user saves or discards it. The transcript
+ * list works on them even while no service runs.
  *
- * The run in progress is journaled as JSON lines in filesDir, one finished
- * entry per line and only ever appended, so it survives process death; a
- * journal left behind by a killed process is kept like an ended run on the
- * next start. Recent transcripts stay journals in filesDir; saved ones are
- * text files in the app's external files directory (Android/data), which
- * needs no permission and is shared through the FileProvider.
+ * A run is journaled as JSON lines in filesDir, one finished entry (a line
+ * with its start and end time) per line and only ever appended, so it
+ * survives process death; a journal left behind by a killed process is
+ * kept like an ended run on the next start. Recent and saved runs both
+ * stay journals in filesDir, so any of them can later be exported as
+ * subtitles or text, or played. Transcripts that earlier versions saved as
+ * text files in the app's external files directory (Android/data) are
+ * still listed, and shared through the FileProvider.
  *
  * Main thread only. All disk I/O runs on one background thread in
  * submission order, so a journal is complete before it is kept, and list
@@ -36,10 +38,12 @@ object TranscriptStore {
     /** Journal of the run in progress. */
     private const val JOURNAL_FILE_NAME = "session.jsonl"
     private const val JOURNAL_SUFFIX = ".jsonl"
-    /** Recent transcripts in filesDir, named "<startedAt>_<endedAt>.jsonl". */
+    /** Recent runs in filesDir, named "<startedAt>_<endedAt>.jsonl". */
     private const val RECENT_DIR = "transcripts/recent"
-    /** Saved transcripts in the external files directory, as in file_paths.xml. */
-    private const val SAVED_DIR = "transcripts"
+    /** Saved runs in filesDir, named like the recent ones. */
+    private const val SAVED_DIR = "transcripts/saved"
+    /** Text transcripts of earlier versions in the external files directory, as in file_paths.xml. */
+    private const val TEXT_DIR = "transcripts"
     /** Earlier versions kept every run in one history of JSON lines… */
     private const val LEGACY_FILE_NAME = "transcript.jsonl"
     /** …and before that in one JSON array snapshot, rewritten every 2 s. */
@@ -54,16 +58,20 @@ object TranscriptStore {
         val startedAt: Long
     }
 
-    /** An ended run waiting to be saved or discarded; [preview] is one of its captions. */
-    data class Recent(
+    /**
+     * A run kept as its journal: [saved], or recent (waiting to be saved or
+     * discarded). [preview] is one of its captions.
+     */
+    data class Journal(
         override val file: File,
         override val startedAt: Long,
         val endedAt: Long,
         val preview: String,
+        val saved: Boolean,
     ) : Record
 
-    /** A transcript saved as a text file of [size] bytes. */
-    data class Saved(override val file: File, override val startedAt: Long, val size: Long) : Record
+    /** A transcript an earlier version saved as a text file of [size] bytes. */
+    data class TextFile(override val file: File, override val startedAt: Long, val size: Long) : Record
 
     private val recorder = TranscriptRecorder().also { r ->
         r.onEntry = { entry -> persist(entry) }
@@ -120,55 +128,60 @@ object TranscriptStore {
         onChanged = listener
     }
 
-    /** Recent transcripts, newest first. */
-    suspend fun recent(): List<Recent> {
+    /** Recent runs, newest first. */
+    suspend fun recent(): List<Journal> {
         val app = appContext ?: return emptyList()
-        return withContext(io) { recentJournals(app).map { it.copy(preview = preview(it.file)) } }
+        return withContext(io) { journals(recentDir(app), saved = false).map { it.withPreview() } }
     }
 
-    /** Saved transcripts, newest first; none while shared storage is unavailable. */
-    suspend fun saved(): List<Saved> {
+    /** Saved runs and the text transcripts of earlier versions, newest first. */
+    suspend fun saved(): List<Record> {
         val app = appContext ?: return emptyList()
         return withContext(io) {
-            savedDir(app)?.listFiles().orEmpty()
+            val journals = journals(savedDir(app), saved = true).map { it.withPreview() }
+            val texts = textDir(app)?.listFiles().orEmpty()
                 .filter { it.isFile && it.name.endsWith(TranscriptExporter.FILE_SUFFIX) }
-                .map { Saved(it, TranscriptExporter.fileTime(it.name) ?: it.lastModified(), it.length()) }
-                .sortedByDescending { it.startedAt }
+                .map { TextFile(it, TranscriptExporter.fileTime(it.name) ?: it.lastModified(), it.length()) }
+            (journals + texts).sortedByDescending { it.startedAt }
         }
     }
 
-    /** Where saved transcripts go; null while shared storage is unavailable. */
-    suspend fun savedLocation(): File? {
+    /** Where the text transcripts of earlier versions are; null while shared storage is unavailable. */
+    suspend fun textLocation(): File? {
         val app = appContext ?: return null
-        return withContext(io) { savedDir(app) }
+        return withContext(io) { textDir(app) }
     }
 
     /**
-     * Save [recent] as a text file and drop it from the recent transcripts.
-     * Throws if it is gone (a newer run replaced it) or can't be written.
+     * Save a recent run: move its journal, unchanged, to the saved ones.
+     * Throws if it is gone (a newer run replaced it) or can't be moved.
      */
-    suspend fun save(context: Context, recent: Recent) {
+    suspend fun save(context: Context, recent: Journal) {
         withContext(io) {
-            val entries = readRecent(context, recent)
-            val dir = savedDir(context)
-                ?: throw IOException(context.getString(R.string.transcripts_storage_unavailable))
-            writeSaved(context, dir, recent.startedAt, entries)
-            recent.file.delete()
+            if (!recent.file.exists()) throw IOException(context.getString(R.string.transcript_gone))
+            val dir = savedDir(context).apply { mkdirs() }
+            if (!recent.file.renameTo(File(dir, recent.file.name))) {
+                throw IOException("can't move ${recent.file.name}")
+            }
         }
     }
 
-    /** Discard a recent transcript or delete a saved one. */
+    /** Discard a recent run or delete a saved transcript. */
     suspend fun delete(record: Record) {
         withContext(io) { record.file.delete() }
     }
 
-    /** The transcript's text; a recent run is rendered the way it would be saved. */
+    /** The entries of a kept run; throws if it is gone (a newer run replaced it). */
+    suspend fun readEntries(context: Context, journal: Journal): List<TranscriptRecorder.Entry> =
+        withContext(io) { readJournal(context, journal) }
+
+    /** The transcript's text; a kept run is rendered as the bilingual text transcript. */
     suspend fun readText(context: Context, record: Record): String = withContext(io) {
         when (record) {
-            is Recent -> TranscriptExporter.format(
-                context, readRecent(context, record), System.currentTimeMillis(),
+            is Journal -> TranscriptExporter.format(
+                context, readJournal(context, record), System.currentTimeMillis(),
             )
-            is Saved -> record.file.readText()
+            is TextFile -> record.file.readText()
         }
     }
 
@@ -199,38 +212,42 @@ object TranscriptStore {
 
     private fun recentDir(context: Context) = File(context.filesDir, RECENT_DIR)
 
-    /** Null while shared storage is unavailable. */
-    private fun savedDir(context: Context): File? = context.getExternalFilesDir(SAVED_DIR)
+    private fun savedDir(context: Context) = File(context.filesDir, SAVED_DIR)
 
-    /** Move [journal] into the recent transcripts, dropping the oldest beyond [MAX_RECENT]. */
+    /** Null while shared storage is unavailable. */
+    private fun textDir(context: Context): File? = context.getExternalFilesDir(TEXT_DIR)
+
+    /** Move [journal] into the recent runs, dropping the oldest beyond [MAX_RECENT]. */
     private fun keepRecent(context: Context, journal: File, startedAt: Long, endedAt: Long) {
         val dir = recentDir(context).apply { mkdirs() }
         if (!journal.renameTo(File(dir, "${startedAt}_$endedAt$JOURNAL_SUFFIX"))) {
             throw IOException("can't move ${journal.name}")
         }
-        recentJournals(context).drop(MAX_RECENT).forEach { it.file.delete() }
+        journals(dir, saved = false).drop(MAX_RECENT).forEach { it.file.delete() }
         notifyChanged()
     }
 
-    /** Recent journals, newest first, without their preview. */
-    private fun recentJournals(context: Context): List<Recent> =
-        recentDir(context).listFiles().orEmpty()
-            .mapNotNull { file -> recentJournal(file) }
+    /** The journals in [dir], newest first, without their preview. */
+    private fun journals(dir: File, saved: Boolean): List<Journal> =
+        dir.listFiles().orEmpty()
+            .mapNotNull { file -> journal(file, saved) }
             .sortedByDescending { it.startedAt }
 
-    /** A recent journal is named after its run: "<startedAt>_<endedAt>.jsonl". */
-    private fun recentJournal(file: File): Recent? {
+    /** A kept journal is named after its run: "<startedAt>_<endedAt>.jsonl". */
+    private fun journal(file: File, saved: Boolean): Journal? {
         if (!file.name.endsWith(JOURNAL_SUFFIX)) return null
         val times = file.name.removeSuffix(JOURNAL_SUFFIX).split('_')
             .map { it.toLongOrNull() ?: return null }
         if (times.size != 2) return null
-        return Recent(file, startedAt = times[0], endedAt = times[1], preview = "")
+        return Journal(file, startedAt = times[0], endedAt = times[1], preview = "", saved = saved)
     }
 
-    /** The entries of [recent]; throws if a newer run replaced it meanwhile. */
-    private fun readRecent(context: Context, recent: Recent): List<TranscriptRecorder.Entry> {
-        if (!recent.file.exists()) throw IOException(context.getString(R.string.transcript_gone))
-        return readEntries(recent.file)
+    private fun Journal.withPreview(): Journal = copy(preview = preview(file))
+
+    /** The entries of [journal]; throws if a newer run replaced it meanwhile. */
+    private fun readJournal(context: Context, journal: Journal): List<TranscriptRecorder.Entry> {
+        if (!journal.file.exists()) throw IOException(context.getString(R.string.transcript_gone))
+        return readJournalFile(journal.file)
     }
 
     /** The run's first translated caption, else its first caption at all. */
@@ -254,7 +271,7 @@ object TranscriptStore {
     private fun recoverJournal(context: Context) {
         val journal = journalFile(context)
         if (!journal.exists()) return
-        val entries = readEntries(journal)
+        val entries = readJournalFile(journal)
         val ended = TranscriptRecorder.EndedSession(
             startedAt = entries.firstOrNull()?.at ?: 0L,
             endedAt = journal.lastModified(),
@@ -276,12 +293,12 @@ object TranscriptStore {
         val history = File(context.filesDir, LEGACY_FILE_NAME)
         val snapshot = File(context.filesDir, LEGACY_ARRAY_FILE_NAME)
         if (!history.exists() && !snapshot.exists()) return
-        val dir = savedDir(context) ?: return
+        val dir = textDir(context) ?: return
         // The snapshot was converted into the JSON lines history before, so
         // with both present the history holds everything.
-        val entries = if (history.exists()) readEntries(history) else readLegacy(snapshot)
+        val entries = if (history.exists()) readJournalFile(history) else readLegacy(snapshot)
         for (session in splitSessions(entries)) {
-            writeSaved(context, dir, session.first().at, session)
+            writeText(context, dir, session.first().at, session)
         }
         history.delete()
         snapshot.delete()
@@ -301,7 +318,7 @@ object TranscriptStore {
     }
 
     /** Write the run that started at [startedAt] as a text file named after its start. */
-    private fun writeSaved(
+    private fun writeText(
         context: Context,
         dir: File,
         startedAt: Long,
@@ -312,7 +329,7 @@ object TranscriptStore {
     }
 
     /** Decode a JSON lines file; a line cut short by a crash mid-write simply doesn't decode. */
-    private fun readEntries(file: File): List<TranscriptRecorder.Entry> {
+    private fun readJournalFile(file: File): List<TranscriptRecorder.Entry> {
         val entries = ArrayList<TranscriptRecorder.Entry>()
         file.forEachLine { line -> decode(line)?.let(entries::add) }
         return entries

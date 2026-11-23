@@ -73,14 +73,15 @@
     <string name="transcripts_recent">最近（未保存）</string>
     <string name="transcripts_recent_hint">最近 %1$d 次至少 %2$d 秒的运行会暂存在这里，等你保存或丢弃；新的运行会替换最旧的。正在进行的运行停止后才会出现。</string>
     <string name="transcripts_saved">已保存</string>
-    <string name="transcripts_saved_location">保存位置：%1$s</string>
-    <string name="transcripts_storage_unavailable">共享存储不可用。</string>
+    <string name="transcripts_saved_location">旧版本保存的文本记录位于：%1$s</string>
     <string name="transcripts_empty">暂无</string>
     <string name="transcript_kept">本次字幕已暂存，可在主界面「字幕记录」中保存。</string>
     <string name="transcript_discard">丢弃</string>
     <string name="transcript_discard_confirm">丢弃这次运行的字幕？丢弃后无法恢复。</string>
     <string name="transcript_delete_confirm">删除这条已保存的字幕记录？此操作无法撤销。</string>
     <string name="transcript_share">分享</string>
+    <string name="transcript_export">导出…</string>
+    <string name="transcript_more">更多操作</string>
     <string name="transcript_save_done">已保存。</string>
     <string name="transcript_save_failed">保存失败：%1$s</string>
     <string name="transcript_gone">这次运行已被更新的运行替换。</string>

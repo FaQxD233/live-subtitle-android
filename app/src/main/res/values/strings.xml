@@ -72,14 +72,15 @@
     <string name="transcripts_recent">RECENT · NOT SAVED</string>
     <string name="transcripts_recent_hint">The last %1$d runs of at least %2$d seconds wait here until you save or discard them; a newer run replaces the oldest. The run in progress shows up once it stops.</string>
     <string name="transcripts_saved">SAVED</string>
-    <string name="transcripts_saved_location">Saved to %1$s</string>
-    <string name="transcripts_storage_unavailable">Shared storage is unavailable.</string>
+    <string name="transcripts_saved_location">Text transcripts saved by earlier versions: %1$s</string>
     <string name="transcripts_empty">None yet.</string>
     <string name="transcript_kept">Captions of this run were kept. Save them in Caption records on the main screen.</string>
     <string name="transcript_discard">Discard</string>
     <string name="transcript_discard_confirm">Discard the captions of this run? They can\'t be recovered.</string>
     <string name="transcript_delete_confirm">Delete this saved transcript? This can\'t be undone.</string>
     <string name="transcript_share">Share</string>
+    <string name="transcript_export">Export…</string>
+    <string name="transcript_more">More actions</string>
     <string name="transcript_save_done">Saved.</string>
     <string name="transcript_save_failed">Save failed: %1$s</string>
     <string name="transcript_gone">this run was replaced by a newer one.</string>
