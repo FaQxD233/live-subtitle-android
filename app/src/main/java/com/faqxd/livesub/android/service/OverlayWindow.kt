@@ -49,6 +49,10 @@ class OverlayWindow(
     private var unlockAnchor: View? = null
     private var onUnlock: (() -> Unit)? = null
 
+    /** The window is placed by its bottom edge, so its y counts up from the screen bottom. */
+    private val isBottomAnchored: Boolean
+        get() = (params.gravity and Gravity.VERTICAL_GRAVITY_MASK) == Gravity.BOTTOM
+
     /** Add the window, clamped into the current screen. Throws if the system refuses it. */
     fun attach() {
         if (isAttached) return
@@ -113,6 +117,7 @@ class OverlayWindow(
      * [verticalOnly]). Movement within the touch slop is ignored so a tap
      * doesn't nudge the window; with [clickOnTap] such a tap is forwarded
      * to the view's click listener instead. [onDragEnd] runs after a drag.
+     * A window anchored at the bottom ([Gravity.BOTTOM]) counts y upwards.
      */
     fun dragListener(
         clickOnTap: Boolean = false,
@@ -143,7 +148,7 @@ class OverlayWindow(
                     }
                     dragging = true
                     params.x = initialX + dx.toInt()
-                    params.y = initialY + dy.toInt()
+                    params.y = if (isBottomAnchored) initialY - dy.toInt() else initialY + dy.toInt()
                     update()
                     true
                 }
@@ -164,10 +169,11 @@ class OverlayWindow(
      * Android 12+ blocks touches that pass through an app overlay unless the
      * window's opacity is at most [CLICK_THROUGH_WINDOW_ALPHA], so the whole
      * window is dimmed slightly while the mode is on. The window itself
-     * can't be touched then, so a separate small unlock button is placed
-     * exactly over [anchor]; tapping it calls [onUnlock].
+     * can't be touched then; with an [anchor], a separate small unlock
+     * button is placed exactly over it, and tapping it calls [onUnlock]
+     * (for a window placed by its top-left corner, as the caption overlay).
      */
-    fun setClickThrough(enabled: Boolean, anchor: View, onUnlock: () -> Unit): Boolean {
+    fun setClickThrough(enabled: Boolean, anchor: View? = null, onUnlock: (() -> Unit)? = null): Boolean {
         if (!isAttached || enabled == isClickThrough) return false
         isClickThrough = enabled
         val notTouchable = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE

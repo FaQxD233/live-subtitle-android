@@ -74,9 +74,13 @@ data class AppSettings(
     var overlayY: Int = Int.MIN_VALUE,
     var overlayWidth: Int = Int.MIN_VALUE,
     var overlayHeight: Int = Int.MIN_VALUE,
-    // The subtitle player's own settings, saved by their own functions.
+    // The subtitle player's own settings, saved by their own functions. The
+    // subtitle is placed by its bottom edge (px above the screen bottom), the
+    // control window by its top-left corner; MIN_VALUE = unset.
     var subtitleFontSize: Int = DEFAULT_SUBTITLE_FONT_SIZE,
-    var subtitleY: Int = Int.MIN_VALUE,
+    var subtitleBottom: Int = Int.MIN_VALUE,
+    var playerControlsX: Int = Int.MIN_VALUE,
+    var playerControlsY: Int = Int.MIN_VALUE,
 ) {
     val normalizedTargetLanguage: String
         get() = normalizeTargetLanguage(targetLanguage)
@@ -197,7 +201,9 @@ data class AppSettings(
                 overlayHeight = prefs.getInt("overlay_height", Int.MIN_VALUE),
                 subtitleFontSize = prefs.getInt("subtitle_font_size", DEFAULT_SUBTITLE_FONT_SIZE)
                     .coerceIn(MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE),
-                subtitleY = prefs.getInt("${WINDOW_SUBTITLE}_y", Int.MIN_VALUE),
+                subtitleBottom = prefs.getInt("${WINDOW_SUBTITLE}_y", Int.MIN_VALUE),
+                playerControlsX = prefs.getInt("${WINDOW_PLAYER_CONTROLS}_x", Int.MIN_VALUE),
+                playerControlsY = prefs.getInt("${WINDOW_PLAYER_CONTROLS}_y", Int.MIN_VALUE),
             )
         }
 
@@ -236,8 +242,10 @@ data class AppSettings(
 
         /** Key prefix of the caption overlay's geometry. */
         const val WINDOW_OVERLAY = "overlay"
-        /** Key prefix of the subtitle player's position. */
-        const val WINDOW_SUBTITLE = "subtitle"
+        /** Key prefix of the subtitle player's subtitle position (its y counts up from the bottom). */
+        const val WINDOW_SUBTITLE = "subtitle_text"
+        /** Key prefix of the subtitle player's control window position. */
+        const val WINDOW_PLAYER_CONTROLS = "player_controls"
 
         /** Persist the subtitle player's text size only (see [saveWindowGeometry] for why). */
         fun saveSubtitleFontSize(context: Context, size: Int) {

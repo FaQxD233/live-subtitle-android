@@ -83,6 +83,9 @@ class SubtitlePlayerService : Service() {
             AppSettings.saveSubtitleFontSize(this@SubtitlePlayerService, size)
         }
 
+        // Folded up, the controls only needed an update when the subtitle changed.
+        override fun onControlsExpanded() = render()
+
         override fun onLockChanged(locked: Boolean) {
             // The notification offers "Unlock" while locked.
             updateNotification()

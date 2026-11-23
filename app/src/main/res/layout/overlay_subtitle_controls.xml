@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The subtitle player's control window, apart from the subtitle so the
+    two never push each other around. Expanded it is a card in the caption
+    overlay's style; minimized (by hand, by locking, or a few seconds into
+    playback) it folds into a small pill that expands it again on a tap.
+    Both drag the window; the margins leave room for the elevation shadows.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/playerPill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="6dp"
+        android:background="@drawable/overlay_pill_bg"
+        android:contentDescription="@string/overlay_expand"
+        android:elevation="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="6dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <!-- Playing or paused. -->
+        <ImageView
+            android:id="@+id/playerPillState"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:importantForAccessibility="no"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="@color/hud_text_primary" />
+
+        <!-- Shown while the subtitle is locked (touches pass through). -->
+        <ImageView
+            android:id="@+id/playerPillLock"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginStart="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_overlay_lock"
+            android:tint="@color/hud_text_primary"
+            android:visibility="gone" />
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="8dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_overlay_expand"
+            android:tint="@color/hud_text_primary" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/playerCard"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="6dp"
+        android:background="@drawable/overlay_card_bg"
+        android:elevation="6dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp">
+
+        <!-- Header: time, the last shift, lock, minimize, close -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/playerTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:textColor="@color/hud_text_secondary"
+                android:textSize="12sp" />
+
+            <!-- Briefly names the last shift, e.g. "Subtitles 0.5 s later". -->
+            <TextView
+                android:id="@+id/playerShift"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/status_connecting"
+                android:textSize="11sp" />
+
+            <ImageButton
+                android:id="@+id/playerLockBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:contentDescription="@string/player_lock"
+                android:src="@drawable/ic_overlay_lock" />
+
+            <ImageButton
+                android:id="@+id/playerMinimizeBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:contentDescription="@string/overlay_minimize"
+                android:src="@drawable/ic_overlay_minimize" />
+
+            <ImageButton
+                android:id="@+id/playerCloseBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginEnd="0dp"
+                android:contentDescription="@string/overlay_close"
+                android:src="@android:drawable/ic_menu_close_clear_cancel" />
+        </LinearLayout>
+
+        <SeekBar
+            android:id="@+id/playerSeek"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:progressTint="@color/accent_bright"
+            android:thumbTint="@color/accent_bright" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/playerPrevBtn"
+                style="@style/SubtitleControl"
+                android:contentDescription="@string/player_previous"
+                android:src="@android:drawable/ic_media_previous" />
+
+            <Button
+                android:id="@+id/playerBackBtn"
+                style="@style/SubtitleControl"
+                android:contentDescription="@string/player_back"
+                android:padding="0dp"
+                android:text="@string/player_back_label" />
+
+            <ImageButton
+                android:id="@+id/playerPlayBtn"
+                style="@style/SubtitleControl"
+                android:background="@drawable/overlay_btn_primary"
+                android:contentDescription="@string/player_play"
+                android:src="@android:drawable/ic_media_play" />
+
+            <Button
+                android:id="@+id/playerForwardBtn"
+                style="@style/SubtitleControl"
+                android:contentDescription="@string/player_forward"
+                android:padding="0dp"
+                android:text="@string/player_forward_label" />
+
+            <ImageButton
+                android:id="@+id/playerNextBtn"
+                style="@style/SubtitleControl"
+                android:layout_marginEnd="12dp"
+                android:contentDescription="@string/player_next"
+                android:src="@android:drawable/ic_media_next" />
+
+            <Button
+                android:id="@+id/playerSmallerBtn"
+                style="@style/SubtitleControl"
+                android:contentDescription="@string/player_smaller"
+                android:padding="0dp"
+                android:text="@string/player_smaller_label" />
+
+            <Button
+                android:id="@+id/playerLargerBtn"
+                style="@style/SubtitleControl"
+                android:layout_marginEnd="0dp"
+                android:contentDescription="@string/player_larger"
+                android:padding="0dp"
+                android:text="@string/player_larger_label" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
