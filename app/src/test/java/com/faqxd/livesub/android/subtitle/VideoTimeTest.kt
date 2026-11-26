@@ -33,6 +33,27 @@ class VideoTimeTest {
     }
 
     @Test
+    fun aClockCloseToThePlayingVideoIsLeftAlone() {
+        // Jitter under the tolerance.
+        assertFalse(VideoTime.needsSync(true, 1.0, 10_000, true, 1.0, 10_250, 300))
+        assertFalse(VideoTime.needsSync(true, 1.5, 10_000, true, 1.5, 9_750, 300))
+        // Both paused at one place: a paused video may report speed 0.
+        assertFalse(VideoTime.needsSync(false, 1.0, 10_000, false, 0.0, 10_100, 300))
+    }
+
+    @Test
+    fun aClockOffPlayingOrSpeedIsMoved() {
+        // Seeked.
+        assertTrue(VideoTime.needsSync(true, 1.0, 10_000, true, 1.0, 10_300, 300))
+        assertTrue(VideoTime.needsSync(false, 1.0, 10_000, false, 1.0, 60_000, 300))
+        // Paused or resumed in the video app.
+        assertTrue(VideoTime.needsSync(true, 1.0, 10_000, false, 1.0, 10_000, 300))
+        assertTrue(VideoTime.needsSync(false, 1.0, 10_000, true, 1.0, 10_000, 300))
+        // Another speed.
+        assertTrue(VideoTime.needsSync(true, 1.0, 10_000, true, 1.5, 10_000, 300))
+    }
+
+    @Test
     fun anUnsetOrFutureUpdateTimeDoesNotMoveIt() {
         // Never set: not a jump by the whole time since boot.
         assertEquals(10_000L, VideoTime.positionAt(10_000, 0, 1f, playing = true, now = 3_600_000))

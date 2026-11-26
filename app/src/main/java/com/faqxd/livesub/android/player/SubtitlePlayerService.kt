@@ -36,6 +36,7 @@ import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.subtitle.CueTimeline
 import com.faqxd.livesub.android.subtitle.SubtitleClock
 import com.faqxd.livesub.android.subtitle.SubtitleCue
+import com.faqxd.livesub.android.subtitle.VideoTime
 import java.io.File
 
 /**
@@ -46,9 +47,13 @@ import java.io.File
  * The clock pauses when the screen goes off, and playback of a subtitle
  * continues where it stopped last time ([SubtitlePositions]).
  *
- * For now the controls can also show a readout of the media sessions
- * other apps publish ([MediaSessionProbe]): phase 0 of following the
- * video app (docs/plan-mediasession-sync.md).
+ * With notification access it can follow the video app instead
+ * (docs/plan-mediasession-sync.md): [VideoFollower] says what the video
+ * does, and the clock keeps the video's position, the subtitles running
+ * an offset ahead of it. Play / pause then works the video, previous /
+ * next, ±0.5 s and the progress bar move the offset, and the speed is the
+ * video's. The controls can also show a readout of the media sessions
+ * ([MediaSessionProbe]) for measuring.
  *
  * It plays no audio or video, so it is a special-use foreground service.
  * Live translation and the player both float over other apps, so starting
@@ -67,9 +72,17 @@ class SubtitlePlayerService : Service() {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
     private val tick = Runnable { render() }
-    // The media sessions readout, while turned on (phase 0, see the class).
+    // The media sessions readout, while turned on (see the class).
     private var probe: MediaSessionProbe? = null
     private val probeTick = Runnable { refreshProbe() }
+    // Following the video app: on while there is a follower; [video] is
+    // what it follows as last told. While [tracking] such a video, the
+    // clock keeps the video's position and the subtitles run [offset]
+    // ahead of it; otherwise the clock keeps the subtitles' own position.
+    private var follower: VideoFollower? = null
+    private var video: VideoFollower.Video? = null
+    private var tracking = false
+    private var offset = 0L
 
     // The text size and background opacity apply while playing. The
     // framework holds the listener only weakly, so keep a field reference.
@@ -78,35 +91,40 @@ class SubtitlePlayerService : Service() {
     }
 
     // Most video apps pause when the screen goes off; the subtitles must
-    // not run on meanwhile.
+    // not run on meanwhile. A followed video tells for itself (some play on).
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (clock.isPlaying) togglePlayback()
+            if (!tracking && clock.isPlaying) togglePlayback()
         }
     }
 
     private val overlayCallbacks = object : SubtitlePlayerOverlay.Callbacks {
-        override fun onPlayPauseClicked() = togglePlayback()
+        override fun onPlayPauseClicked() = playOrPause()
 
         override fun onPreviousClicked() {
-            seekTo(timeline.previousStart(clock.position(), RESTART_LINE_AFTER_MS) ?: 0L)
+            moveTo(timeline.previousStart(subtitlePosition(), RESTART_LINE_AFTER_MS) ?: 0L)
         }
 
         override fun onNextClicked() {
-            timeline.nextStart(clock.position())?.let { seekTo(it) }
+            timeline.nextStart(subtitlePosition())?.let { moveTo(it) }
         }
 
         override fun onShiftClicked(deltaMs: Long) {
-            clock.shift(deltaMs)
+            if (tracking) offset += deltaMs else clock.shift(deltaMs)
             overlay?.showShift(deltaMs)
             render()
         }
 
-        override fun onSeek(positionMs: Long) = seekTo(positionMs)
+        override fun onSeek(positionMs: Long) = moveTo(positionMs)
 
-        override fun onSpeedClicked() = setSpeed(nextSpeed(clock.rate))
+        // Following a video, the speed is the video's.
+        override fun onSpeedClicked() {
+            if (!tracking) setSpeed(nextSpeed(clock.rate))
+        }
 
-        override fun onSpeedReset() = setSpeed(1.0)
+        override fun onSpeedReset() {
+            if (!tracking) setSpeed(1.0)
+        }
 
         override fun onFontSizeClicked(deltaSp: Int) {
             val size = AppSettings.load(this@SubtitlePlayerService).subtitleFontSize + deltaSp
@@ -118,6 +136,19 @@ class SubtitlePlayerService : Service() {
         override fun onControlsExpanded() {
             render()
             refreshProbe()
+            // Back from granting access, say.
+            follower?.refresh()
+        }
+
+        override fun onFollowClicked() = toggleFollowing()
+
+        override fun onFollowStatusClicked() {
+            val running = follower ?: return
+            when {
+                !running.refresh() -> openNotificationAccess()
+                video?.hold == VideoFollower.Hold.OTHER_VIDEO -> running.acceptVideo()
+                else -> running.cycle()
+            }
         }
 
         override fun onSessionsClicked() = toggleProbe()
@@ -132,12 +163,16 @@ class SubtitlePlayerService : Service() {
             // The notification offers "Unlock" while locked.
             updateNotification()
             if (locked) {
-                Toast.makeText(this@SubtitlePlayerService, R.string.player_locked_hint, Toast.LENGTH_LONG).show()
+                val hint = if (tracking) R.string.player_locked_hint_following else R.string.player_locked_hint
+                Toast.makeText(this@SubtitlePlayerService, hint, Toast.LENGTH_LONG).show()
             }
         }
 
-        // The video app played or paused when the second tap went down.
-        override fun onDoubleTap(sinceMs: Long) = togglePlayback(sinceMs)
+        // The video app played or paused when the second tap went down. A
+        // followed video tells for itself, and toggling it again would undo that.
+        override fun onDoubleTap(sinceMs: Long) {
+            if (!tracking) togglePlayback(sinceMs)
+        }
 
         override fun onCloseClicked() = stopSelf()
     }
@@ -162,7 +197,7 @@ class SubtitlePlayerService : Service() {
             stopSelf()
         } else {
             when (action) {
-                ACTION_TOGGLE -> togglePlayback()
+                ACTION_TOGGLE -> playOrPause()
                 ACTION_UNLOCK -> overlay?.setLocked(false)
                 ACTION_STOP -> stopSelf()
             }
@@ -187,6 +222,8 @@ class SubtitlePlayerService : Service() {
         probe?.stop()
         probe = null
         handler.removeCallbacks(probeTick)
+        follower?.stop()
+        follower = null
         // Windows added through WindowManager outlive the service unless removed.
         overlay?.detach()
         overlay = null
@@ -194,8 +231,10 @@ class SubtitlePlayerService : Service() {
     }
 
     /**
-     * Play what [SubtitlePlayback] holds, paused until the user taps play:
-     * from where it stopped last time, else from the start.
+     * Play what [SubtitlePlayback] holds: following the video app when the
+     * user left that on and access is there, from the video's position;
+     * else paused until the user taps play, from where it stopped last
+     * time, or from the start.
      */
     private fun start() {
         // A subtitle playing until now is replaced: remember where it was.
@@ -203,15 +242,27 @@ class SubtitlePlayerService : Service() {
         title = SubtitlePlayback.title
         key = SubtitlePlayback.key
         timeline = CueTimeline(SubtitlePlayback.cues)
-        val resumeAt = SubtitlePositions.get(this, key)?.takeIf { it < timeline.durationMs }
-        clock.pause()
-        clock.seekTo(resumeAt ?: 0L)
+        // The offset to a video is kept for one playback only (plan, phase 1).
+        offset = 0L
         // Before live translation stops: its run is kept as it ends, and
         // dropping old runs then spares the one shown here (playingRecord).
         running = true
         startForegroundWithType()
         if (stopService(Intent(this, LiveTranslateService::class.java))) {
             Toast.makeText(this, R.string.player_stopped_live, Toast.LENGTH_LONG).show()
+        }
+        val fresh = overlay == null
+        if (fresh) {
+            if (AppSettings.followVideo(this) && MediaListenerService.isGranted(this)) startFollowing()
+        } else {
+            // The next video each app shows is the new subtitles'.
+            follower?.forgetVideos()
+        }
+        // Following a video, the clock keeps its position.
+        val resumeAt = if (tracking) null else SubtitlePositions.get(this, key)?.takeIf { it < timeline.durationMs }
+        if (!tracking) {
+            clock.pause()
+            clock.seekTo(resumeAt ?: 0L)
         }
         val shown = overlay ?: SubtitlePlayerOverlay(this, AppSettings.load(this), overlayCallbacks)
             .also { overlay = it }
@@ -232,6 +283,7 @@ class SubtitlePlayerService : Service() {
         if (AppSettings.takePlayerHint(this)) {
             Toast.makeText(this, R.string.player_hint, Toast.LENGTH_LONG).show()
         }
+        updateFollowUi()
         render()
         updateNotification()
     }
@@ -253,9 +305,137 @@ class SubtitlePlayerService : Service() {
         updateNotification()
     }
 
-    private fun seekTo(positionMs: Long) {
-        clock.seekTo(positionMs.coerceIn(0L, timeline.durationMs))
+    /** Play or pause: the followed video, which the subtitles then follow; else the subtitles' own clock. */
+    private fun playOrPause() {
+        val running = follower
+        val followed = video
+        if (tracking && running != null && followed != null) {
+            if (followed.playing) running.pause() else running.play()
+        } else {
+            togglePlayback()
+        }
+    }
+
+    /** Put the subtitles at [positionMs]: by the offset while following a video, else by the clock. */
+    private fun moveTo(positionMs: Long) {
+        val target = positionMs.coerceIn(0L, timeline.durationMs)
+        if (tracking) offset = target - clock.position() else clock.seekTo(target)
         render()
+    }
+
+    /** How far the subtitles run ahead of the clock: the offset while it keeps a video's position. */
+    private fun lead(): Long = if (tracking) offset else 0L
+
+    /** Where the subtitles are: before 0 while a followed video hasn't reached their start yet. */
+    private fun subtitlePosition(): Long = clock.position() + lead()
+
+    /** Whether playback shows as playing: a followed video's own state (through an ad too), else the clock's. */
+    private fun showsPlaying(): Boolean = if (tracking) video?.playing ?: clock.isPlaying else clock.isPlaying
+
+    /** Turn following the video app on or off, remembered for next time. */
+    private fun toggleFollowing() {
+        if (follower != null) {
+            AppSettings.saveFollowVideo(this, false)
+            stopFollowing()
+            return
+        }
+        AppSettings.saveFollowVideo(this, true)
+        startFollowing()
+        if (follower?.hasAccess != true) openNotificationAccess()
+    }
+
+    private fun startFollowing() {
+        val created = VideoFollower(this, handler) { onVideoChanged() }
+        // Before it reports anything: the report reads it.
+        follower = created
+        created.refresh()
+    }
+
+    private fun stopFollowing() {
+        follower?.stop()
+        follower = null
+        onVideoChanged()
+    }
+
+    /** The followed video changed, or following did: move the subtitles with it, or let them go. */
+    private fun onVideoChanged() {
+        video = follower?.video
+        val trackable = video?.takeIf { it.positionKnown }
+        when {
+            trackable == null -> if (tracking) stopTracking()
+            !tracking -> startTracking(trackable)
+            else -> syncToVideo(trackable, force = false)
+        }
+        updateFollowUi()
+    }
+
+    /** The clock keeps [followed]'s position from now on; until it syncs, the subtitles stay where they are. */
+    private fun startTracking(followed: VideoFollower.Video) {
+        val position = clock.position()
+        tracking = true
+        clock.seekTo(position - offset)
+        syncToVideo(followed, force = true)
+        // Play / pause now works the video.
+        updateNotification()
+    }
+
+    /** Back to the subtitles' own clock, paused where they are (not before their start). */
+    private fun stopTracking() {
+        val position = subtitlePosition().coerceIn(0L, timeline.durationMs)
+        tracking = false
+        clock.pause()
+        clock.seekTo(position)
+        render()
+        updateNotification()
+    }
+
+    /**
+     * Move the clock with [followed]: to its position, speed and playing
+     * or not, unless it is that close already ([SYNC_TOLERANCE_MS], or
+     * [force]); through an ad or another video, let the subtitles wait
+     * where they are.
+     */
+    private fun syncToVideo(followed: VideoFollower.Video, force: Boolean) {
+        val wasPlaying = clock.isPlaying
+        if (followed.hold != null) {
+            clock.pause()
+        } else {
+            val position = followed.positionAt(SystemClock.elapsedRealtime())
+            val speed = followed.speed.toDouble()
+            if (force || VideoTime.needsSync(
+                    clock.isPlaying, clock.rate, clock.position(),
+                    followed.playing, speed, position, SYNC_TOLERANCE_MS,
+                )
+            ) {
+                // Paused or rewinding, a video may report 0 or less, which the clock can't take.
+                if (speed > 0) {
+                    clock.rate = speed
+                    overlay?.setSpeed(speed)
+                }
+                clock.seekTo(position)
+                if (followed.playing) clock.play() else clock.pause()
+            }
+        }
+        render()
+        if (wasPlaying != clock.isPlaying) updateNotification()
+    }
+
+    /** Show whether and how the subtitles follow the video app. */
+    private fun updateFollowUi() {
+        val shown = overlay ?: return
+        val running = follower
+        val followed = video
+        val status = when {
+            running == null -> getString(R.string.player_follow_off)
+            !running.hasAccess -> getString(R.string.player_follow_no_access)
+            followed == null -> getString(R.string.player_follow_waiting)
+            !followed.positionKnown -> getString(R.string.player_follow_no_position, followed.app)
+            followed.hold == VideoFollower.Hold.AD -> getString(R.string.player_follow_ad, followed.app)
+            followed.hold == VideoFollower.Hold.OTHER_VIDEO -> getString(R.string.player_follow_other_video, followed.app)
+            running.sessionCount > 1 -> getString(R.string.player_follow_switchable, followed.app)
+            else -> getString(R.string.player_follow_on, followed.app)
+        }
+        shown.showFollow(running != null, status, tracking, followed?.canPlayPause == true)
     }
 
     private fun setSpeed(rate: Double) {
@@ -267,7 +447,7 @@ class SubtitlePlayerService : Service() {
     /** Remember where playback of the subtitle is, unless it played to the end or had barely begun. */
     private fun savePosition() {
         if (key.isEmpty()) return
-        val position = clock.position()
+        val position = subtitlePosition()
         val worthKeeping = position >= RESUME_MIN_MS && position < timeline.durationMs
         SubtitlePositions.put(this, key, if (worthKeeping) position else null)
     }
@@ -275,24 +455,27 @@ class SubtitlePlayerService : Service() {
     /**
      * Show the cues of the current position and schedule the next update:
      * when the shown cues change, and every [PROGRESS_TICK_MS] while the
-     * control bar shows. Playback pauses once past the last cue.
+     * control bar shows. Playback pauses once past the last cue, unless it
+     * follows a video, which decides that for itself.
      */
     private fun render() {
         handler.removeCallbacks(tick)
         val shown = overlay ?: return
-        var position = clock.position()
-        if (clock.isPlaying && position >= timeline.durationMs + END_GRACE_MS) {
+        var position = subtitlePosition()
+        if (!tracking && clock.isPlaying && position >= timeline.durationMs + END_GRACE_MS) {
             clock.pause()
             clock.seekTo(timeline.durationMs)
             position = timeline.durationMs
             updateNotification()
         }
         shown.showCues(timeline.active(position))
-        shown.setProgress(position, timeline.durationMs, clock.isPlaying)
+        shown.setProgress(position.coerceAtLeast(0L), timeline.durationMs, showsPlaying())
         if (!clock.isPlaying) return
-        val nextChange = timeline.nextChange(position) ?: (timeline.durationMs + END_GRACE_MS)
-        var delay = clock.timeUntil(nextChange)
+        // Past the last change a followed video plays on: only the progress needs updates.
+        val nextChange = timeline.nextChange(position) ?: if (tracking) null else timeline.durationMs + END_GRACE_MS
+        var delay = if (nextChange == null) Long.MAX_VALUE else clock.timeUntil(nextChange - lead())
         if (shown.showsControls) delay = minOf(delay, PROGRESS_TICK_MS)
+        if (delay == Long.MAX_VALUE) return
         handler.postDelayed(tick, delay.coerceAtLeast(MIN_TICK_MS))
     }
 
@@ -330,10 +513,10 @@ class SubtitlePlayerService : Service() {
     /** Open the notification access setting, with the controls folded out of its way. */
     private fun openNotificationAccess() {
         if (MediaListenerService.openSettings(this)) {
-            Toast.makeText(this, R.string.player_sessions_access, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.player_follow_access, Toast.LENGTH_LONG).show()
             overlay?.foldControls()
         } else {
-            Toast.makeText(this, R.string.player_sessions_no_settings, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.player_follow_no_settings, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -367,7 +550,7 @@ class SubtitlePlayerService : Service() {
             ).apply { setShowBadge(false) }
             notificationManager.createNotificationChannel(channel)
         }
-        val playing = clock.isPlaying
+        val playing = showsPlaying()
         val openApp = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -382,7 +565,10 @@ class SubtitlePlayerService : Service() {
             .setContentIntent(openApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, getString(if (playing) R.string.pause else R.string.player_play), action(ACTION_TOGGLE, 1))
+        // Following a video, play / pause is the video's, where its app takes it.
+        if (!tracking || video?.canPlayPause == true) {
+            builder.addAction(0, getString(if (playing) R.string.pause else R.string.player_play), action(ACTION_TOGGLE, 1))
+        }
         if (overlay?.isLocked == true) {
             builder.addAction(0, getString(R.string.player_unlock), action(ACTION_UNLOCK, 2))
         }
@@ -409,6 +595,8 @@ class SubtitlePlayerService : Service() {
         private const val PROGRESS_TICK_MS = 250L
         /** Refresh rate of the media sessions readout, which extrapolates the positions it shows. */
         private const val PROBE_TICK_MS = 500L
+        /** A followed video this close to the clock is left alone: reports jitter (plan, 4.1). */
+        private const val SYNC_TOLERANCE_MS = 300L
         private const val MIN_TICK_MS = 16L
         /** Playback pauses this long after the last cue ended. */
         private const val END_GRACE_MS = 1_000L

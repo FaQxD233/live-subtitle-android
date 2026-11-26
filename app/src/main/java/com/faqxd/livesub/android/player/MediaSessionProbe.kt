@@ -1,11 +1,9 @@
 package com.faqxd.livesub.android.player
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
-import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
@@ -15,37 +13,27 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Phase 0 of following the video app (docs/plan-mediasession-sync.md): a
- * readout of the media sessions other apps publish, and the numbers
- * following them would rest on: how often each session reports, how old
- * a report is when it arrives, and how far it lands from where the report
- * before put the video. It only watches; the subtitles keep their own
- * clock.
+ * A readout of the media sessions other apps publish, with the numbers
+ * following them rests on (docs/plan-mediasession-sync.md): how often each
+ * session reports, how old a report is when it arrives, and how far it
+ * lands from where the playing report before it put the video. A pause
+ * reports where the video stopped, so its drift is the error following
+ * had just then. It only watches.
  *
  * Watching needs notification access ([MediaListenerService]): each
  * [refresh] starts it once access is there and stops it once access is
  * gone. Main thread only.
  */
-class MediaSessionProbe(private val context: Context, private val handler: Handler) {
+class MediaSessionProbe(private val context: Context, handler: Handler) {
 
-    private val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-    private val listener = MediaListenerService.component(context)
     private val startedAt = SystemClock.elapsedRealtime()
-    // The sessions watched, in the order the system lists them.
-    private var watched = LinkedHashMap<MediaSession.Token, Watched>()
+    // What each session reported, and how.
+    private val records = HashMap<MediaSession.Token, Record>()
     private val events = ArrayDeque<String>()
-    private var listening = false
     // Why the sessions can't be read; null while they can.
     private var problem: String? = null
     private var listenerState: MediaListenerService.State? = null
-    // App labels by package name; null for apps this one can't see.
-    private val labels = HashMap<String, String?>()
-
-    private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-        // Documented as possibly null.
-        log("list changed: " + (controllers?.joinToString(" ") { short(it.packageName) } ?: "null"))
-        watch(controllers.orEmpty())
-    }
+    private val watcher = MediaSessionWatcher(context, handler, Events())
 
     init {
         log("start, ${accessText(MediaListenerService.isGranted(context))}")
@@ -61,29 +49,24 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
             listenerState = state
             log("listener ${state.name.lowercase(Locale.US)}")
         }
-        val controllers = try {
-            if (!listening) {
-                manager.addOnActiveSessionsChangedListener(sessionsChanged, listener, handler)
-                listening = true
-                log("listening")
-            }
-            manager.getActiveSessions(listener)
-        } catch (e: SecurityException) {
+        val wasListening = watcher.isListening
+        if (!watcher.refresh()) {
             // No access yet, or it was taken back.
-            if (problem == null) log("refused: ${e.message}")
-            problem = "session list refused (SecurityException)"
-            stopWatching()
+            if (problem == null) log(REFUSED)
+            problem = REFUSED
+            for (record in records.values) log("${record.name} no longer watched: ${record.summary()}")
+            records.clear()
             return
         }
+        if (!wasListening) log("listening")
         if (problem != null) {
             problem = null
             log("session list allowed")
         }
-        watch(controllers)
     }
 
     /** Stop watching, for good. */
-    fun stop() = stopWatching()
+    fun stop() = watcher.stop()
 
     /** A few lines for the controls: access, the listener, each session now with its numbers so far. */
     fun readout(): String = buildString {
@@ -91,12 +74,15 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
         val granted = MediaListenerService.isGranted(context)
         append(accessText(granted)).append(", listener ").append(MediaListenerService.state.name.lowercase(Locale.US))
         problem?.let { append('\n').append(it) }
-        if (problem == null && watched.isEmpty()) append("\nno active session")
-        watched.values.forEachIndexed { i, session ->
-            append('\n').append(i + 1).append(". ").append(short(session.name))
-            append(' ').append(stateText(session.state, now))
-            append("\n   ").append(metaText(session.metadata))
-            append("\n   ").append(session.reports).append(" reports, drift ").append(session.drifts)
+        val sessions = watcher.sessions
+        if (problem == null && sessions.isEmpty()) append("\nno active session")
+        sessions.forEachIndexed { i, session ->
+            val record = records[session.sessionToken] ?: return@forEachIndexed
+            append('\n').append(i + 1).append(". ").append(short(record.name))
+            append(' ').append(stateText(record.state, now))
+            append("\n   ").append(metaText(record.metadata))
+            append("\n   ").append(record.reports).append(" reports, drift ").append(record.drifts)
+            append(", jumps ").append(record.jumps)
         }
         append(if (granted) "\nlong-press to copy" else "\ntap to grant access, long-press to copy")
     }
@@ -104,91 +90,58 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
     /** The whole record as text to paste: device, access, each session in full, the events. */
     fun report(): String = buildString {
         val now = SystemClock.elapsedRealtime()
-        appendLine("LiveBuddy media sessions, phase 0 (docs/plan-mediasession-sync.md)")
+        appendLine("LiveBuddy media sessions (docs/plan-mediasession-sync.md)")
         appendLine("${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         append(secondsText(now - startedAt)).append(" s recorded, ")
         append(accessText(MediaListenerService.isGranted(context)))
         append(", listener ").append(MediaListenerService.state.name.lowercase(Locale.US))
         problem?.let { append(", ").append(it) }
         appendLine()
-        if (watched.isEmpty()) appendLine("no session watched")
-        watched.values.forEachIndexed { i, session ->
-            appendLine("${i + 1}. ${session.name} (label ${label(session.name) ?: "not visible"}): ${stateText(session.state, now)}")
-            appendLine("   ${metaText(session.metadata)}")
-            appendLine("   ${session.summary()}")
+        val sessions = watcher.sessions
+        if (sessions.isEmpty()) appendLine("no session watched")
+        sessions.forEachIndexed { i, session ->
+            val record = records[session.sessionToken] ?: return@forEachIndexed
+            val label = watcher.label(record.name) ?: "not visible"
+            appendLine("${i + 1}. ${record.name} (label $label): ${stateText(record.state, now)}")
+            appendLine("   ${metaText(record.metadata)}")
+            appendLine("   ${record.summary()}")
         }
         appendLine("events, last $MAX_EVENTS (steady reports only counted):")
         events.forEach { appendLine(it) }
     }
 
-    /** Watch [controllers], the sessions now in the system's order: new ones join, gone ones leave. */
-    private fun watch(controllers: List<MediaController>) {
-        val before = watched.keys.toList()
-        val next = LinkedHashMap<MediaSession.Token, Watched>()
-        for (controller in controllers) {
-            val token = controller.sessionToken
-            if (token in next) continue
-            next[token] = watched.remove(token) ?: Watched(controller).also {
-                controller.registerCallback(it.callback, handler)
-                log(
-                    "${it.name} joins, label ${label(it.name) ?: "not visible"}: " +
-                        "${stateText(it.state)}, ${metaText(it.metadata)}"
-                )
-            }
-        }
-        for (gone in watched.values) {
-            gone.controller.unregisterCallback(gone.callback)
-            log("${gone.name} leaves: ${gone.summary()}")
-        }
-        watched = next
-        if (next.size > 1 && next.keys.toList() != before) {
-            log("order: " + next.values.joinToString(" ") { short(it.name) })
-        }
-    }
-
-    private fun stopWatching() {
-        if (listening) {
-            manager.removeOnActiveSessionsChangedListener(sessionsChanged)
-            listening = false
-        }
-        for (session in watched.values) {
-            session.controller.unregisterCallback(session.callback)
-            log("${session.name} no longer watched: ${session.summary()}")
-        }
-        watched = LinkedHashMap()
-    }
-
-    private fun onState(session: Watched, state: PlaybackState?) {
+    private fun onState(record: Record, state: PlaybackState?) {
         val now = SystemClock.elapsedRealtime()
-        if (session.reports > 0) session.gaps.add(now - session.lastReportAt)
-        session.reports++
-        session.lastReportAt = now
-        val previous = session.state
-        session.state = state
+        if (record.reports > 0) record.gaps.add(now - record.lastReportAt)
+        record.reports++
+        record.lastReportAt = now
+        val previous = record.state
+        record.state = state
         if (state == null) {
-            log("${session.name} state null")
+            log("${record.name} state null")
             return
         }
         val age = if (state.lastPositionUpdateTime > 0) now - state.lastPositionUpdateTime else null
-        if (age != null) session.ages.add(age)
+        if (age != null) record.ages.add(age)
         val drift = drift(previous, state)
-        if (drift != null) session.drifts.add(abs(drift))
+        if (drift != null) {
+            if (abs(drift) < JUMP_MS) record.drifts.add(drift) else record.jumps++
+        }
         val changed = previous == null || previous.state != state.state ||
             previous.playbackSpeed != state.playbackSpeed
-        // Steady reports only count; the rest is what following would act on.
+        // Steady reports only count; the rest is what following acts on.
         if (changed || drift == null || abs(drift) >= NOTABLE_DRIFT_MS) {
-            log("${session.name} ${stateText(state)}, age ${age ?: "?"}" + (drift?.let { ", drift $it" } ?: ""))
+            log("${record.name} ${stateText(state)}, age ${age ?: "?"}" + (drift?.let { ", drift $it" } ?: ""))
         }
     }
 
     /**
-     * How far [state]'s position lands from where [previous] put the video
-     * at [state]'s update time, both playing at one speed; null otherwise
-     * (not both playing, another speed, a position or time unknown).
+     * How far [state]'s position lands from where [previous], playing, put
+     * the video at [state]'s update time; null when [previous] wasn't
+     * playing or a position or time is unknown.
      */
     private fun drift(previous: PlaybackState?, state: PlaybackState): Long? {
-        if (previous == null || !playing(previous) || !playing(state)) return null
-        if (previous.playbackSpeed != state.playbackSpeed) return null
+        if (previous == null || !playing(previous)) return null
         if (previous.position < 0 || state.position < 0) return null
         if (previous.lastPositionUpdateTime <= 0 || state.lastPositionUpdateTime <= 0) return null
         val predicted = VideoTime.positionAt(
@@ -224,33 +177,48 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
         return "$titles, duration ${clock(metadata.getLong(MediaMetadata.METADATA_KEY_DURATION))}"
     }
 
-    /** [text] in quotes, cut to [TITLE_CHARS], followed by its full length. */
-    private fun quote(text: String): String {
-        val shown = if (text.length > TITLE_CHARS) text.take(TITLE_CHARS) + "…" else text
-        return "\"$shown\" (${text.length})"
-    }
-
-    /** The app's label, or null where package visibility hides the app from this one. */
-    @Suppress("DEPRECATION")
-    private fun label(packageName: String): String? {
-        if (packageName in labels) return labels[packageName]
-        val found = try {
-            val packages = context.packageManager
-            packages.getApplicationLabel(packages.getApplicationInfo(packageName, 0)).toString()
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
-        }
-        labels[packageName] = found
-        return found
-    }
-
     private fun log(event: String) {
         events.addLast("+${secondsText(SystemClock.elapsedRealtime() - startedAt)} $event")
         if (events.size > MAX_EVENTS) events.removeFirst()
     }
 
+    private inner class Events : MediaSessionWatcher.Listener {
+        override fun onListChanged(controllers: List<MediaController>?) {
+            // Documented as possibly null.
+            log("list changed: " + (controllers?.joinToString(" ") { short(it.packageName) } ?: "null"))
+        }
+
+        override fun onSessionAdded(session: MediaController) {
+            val record = Record(session)
+            records[session.sessionToken] = record
+            val label = watcher.label(record.name) ?: "not visible"
+            log("${record.name} joins, label $label: ${stateText(record.state)}, ${metaText(record.metadata)}")
+        }
+
+        override fun onSessionRemoved(session: MediaController) {
+            records.remove(session.sessionToken)?.let { log("${it.name} leaves: ${it.summary()}") }
+        }
+
+        override fun onSessionsChanged() {
+            val sessions = watcher.sessions
+            if (sessions.size > 1) log("order: " + sessions.joinToString(" ") { short(it.packageName) })
+        }
+
+        override fun onStateChanged(session: MediaController, state: PlaybackState?) {
+            records[session.sessionToken]?.let { onState(it, state) }
+        }
+
+        override fun onMetadataChanged(session: MediaController, metadata: MediaMetadata?) {
+            val record = records[session.sessionToken] ?: return
+            record.metadata = metadata
+            log("${record.name} meta: ${metaText(metadata)}")
+        }
+
+        override fun onSessionDestroyed(session: MediaController) = log("${session.packageName} destroyed")
+    }
+
     /** A session watched: what it reported last, and how it reports. */
-    private inner class Watched(val controller: MediaController) {
+    private class Record(controller: MediaController) {
         val name: String = controller.packageName
         var state: PlaybackState? = controller.playbackState
         var metadata: MediaMetadata? = controller.metadata
@@ -260,21 +228,12 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
         val gaps = Stat()
         /** How old a report's position was when it arrived: now − its update time. */
         val ages = Stat()
-        /** How far a report lands from where the one before put the video, both playing at one speed. */
+        /** Where a report lands against where the playing one before it put the video (+ ahead). */
         val drifts = Stat()
+        /** Reports [JUMP_MS] or more off that: seeks and restarts rather than drift. */
+        var jumps = 0
 
-        val callback = object : MediaController.Callback() {
-            override fun onPlaybackStateChanged(state: PlaybackState?) = onState(this@Watched, state)
-
-            override fun onMetadataChanged(metadata: MediaMetadata?) {
-                this@Watched.metadata = metadata
-                log("$name meta: ${metaText(metadata)}")
-            }
-
-            override fun onSessionDestroyed() = log("$name destroyed")
-        }
-
-        fun summary(): String = "$reports reports, gap $gaps, age $ages, drift $drifts"
+        fun summary(): String = "$reports reports, gap $gaps, age $ages, drift $drifts, jumps $jumps"
     }
 
     /** How many ms values, and their average, least and most. */
@@ -297,9 +256,12 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
     private companion object {
         /** Events kept for the copied record. */
         const val MAX_EVENTS = 100
-        /** A report landing this far from the predicted position is logged: the debounce threshold assumed so far (plan, 4.1). */
+        /** A report landing this far from the predicted position is logged: the sync tolerance (plan, 4.1). */
         const val NOTABLE_DRIFT_MS = 300L
+        /** A report this far off is a seek or a restart, not drift. */
+        const val JUMP_MS = 3_000L
         const val TITLE_CHARS = 24
+        const val REFUSED = "session list refused (SecurityException)"
         val ACTIONS = listOf(
             PlaybackState.ACTION_PLAY to "play",
             PlaybackState.ACTION_PAUSE to "pause",
@@ -312,6 +274,12 @@ class MediaSessionProbe(private val context: Context, private val handler: Handl
         fun short(packageName: String): String = packageName.substringAfterLast('.')
 
         fun secondsText(ms: Long): String = String.format(Locale.US, "%.1f", ms / 1000.0)
+
+        /** [text] in quotes, cut to [TITLE_CHARS], followed by its full length. */
+        fun quote(text: String): String {
+            val shown = if (text.length > TITLE_CHARS) text.take(TITLE_CHARS) + "…" else text
+            return "\"$shown\" (${text.length})"
+        }
 
         fun stateName(state: Int): String = when (state) {
             PlaybackState.STATE_NONE -> "NONE"

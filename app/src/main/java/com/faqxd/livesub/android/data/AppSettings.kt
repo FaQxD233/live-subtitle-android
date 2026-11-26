@@ -134,6 +134,8 @@ data class AppSettings(
         const val DEFAULT_SUBTITLE_FONT_SIZE = 20
         private const val PREFS_NAME = "livebuddy_settings"
         private const val KEY_PLAYER_HINT_SHOWN = "player_hint_shown"
+        private const val KEY_PLAYER_FOLLOW_VIDEO = "player_follow_video"
+        private const val KEY_PLAYER_SEEKABLE_APPS = "player_seekable_apps"
 
         /** Backing preferences file for [load] / [save]; also for change listeners. */
         fun prefs(context: Context): SharedPreferences =
@@ -268,6 +270,25 @@ data class AppSettings(
             if (prefs.getBoolean(KEY_PLAYER_HINT_SHOWN, false)) return false
             prefs.edit { putBoolean(KEY_PLAYER_HINT_SHOWN, true) }
             return true
+        }
+
+        /** Whether the subtitle player follows the video app: on until the user turns it off. */
+        fun followVideo(context: Context): Boolean = prefs(context).getBoolean(KEY_PLAYER_FOLLOW_VIDEO, true)
+
+        fun saveFollowVideo(context: Context, follow: Boolean) {
+            prefs(context).edit { putBoolean(KEY_PLAYER_FOLLOW_VIDEO, follow) }
+        }
+
+        /**
+         * Packages of the video apps whose media sessions offered seeking:
+         * there, a session without it shows an ad (see the player's VideoFollower).
+         */
+        fun seekableApps(context: Context): Set<String> =
+            prefs(context).getStringSet(KEY_PLAYER_SEEKABLE_APPS, null)?.toSet() ?: emptySet()
+
+        fun saveSeekableApps(context: Context, apps: Set<String>) {
+            // A copy: a set handed to the preferences must not change afterwards.
+            prefs(context).edit { putStringSet(KEY_PLAYER_SEEKABLE_APPS, apps.toHashSet()) }
         }
 
         /**

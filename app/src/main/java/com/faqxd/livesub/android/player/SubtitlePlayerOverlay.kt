@@ -44,9 +44,11 @@ import kotlin.math.roundToInt
  * button unlocks. Locked, a double tap anywhere plays or pauses
  * ([onOutsideTouch]).
  *
- * For now the card's header also has a sessions button, which turns on a
- * readout of other apps' media sessions at the bottom of the card
- * ([showReadout]): phase 0 of following the video app.
+ * Under the header, a follow button turns following the video app on or
+ * off, next to a line saying how it goes ([showFollow]); a tap on that
+ * line switches between video apps, or follows another video. The
+ * header's sessions button turns on a readout of other apps' media
+ * sessions at the bottom of the card ([showReadout]), for measuring.
  *
  * Main thread only.
  */
@@ -80,7 +82,11 @@ class SubtitlePlayerOverlay(
          */
         fun onDoubleTap(sinceMs: Long)
         fun onCloseClicked()
-        /** Turn the media sessions readout on or off (phase 0 of following the video app). */
+        /** Turn following the video app on or off. */
+        fun onFollowClicked()
+        /** The line saying how following goes was tapped. */
+        fun onFollowStatusClicked()
+        /** Turn the media sessions readout on or off. */
         fun onSessionsClicked()
         /** The readout was tapped: it offers the notification access setting while that is missing. */
         fun onReadoutClicked()
@@ -114,6 +120,8 @@ class SubtitlePlayerOverlay(
     private val playBtn: ImageButton = controlsRoot.findViewById(R.id.playerPlayBtn)
     private val lockBtn: ImageButton = controlsRoot.findViewById(R.id.playerLockBtn)
     private val readout: TextView = controlsRoot.findViewById(R.id.playerReadout)
+    private val followBtn: Button = controlsRoot.findViewById(R.id.playerFollowBtn)
+    private val followStatus: TextView = controlsRoot.findViewById(R.id.playerFollowStatus)
 
     private var expanded = true
     private var playing = false
@@ -193,6 +201,8 @@ class SubtitlePlayerOverlay(
         control(R.id.playerLockBtn) { setLocked(!isLocked) }
         control(R.id.playerMinimizeBtn) { setExpanded(false) }
         control(R.id.playerCloseBtn) { callbacks.onCloseClicked() }
+        control(R.id.playerFollowBtn) { callbacks.onFollowClicked() }
+        control(R.id.playerFollowStatus) { callbacks.onFollowStatusClicked() }
         control(R.id.playerSessionsBtn) { callbacks.onSessionsClicked() }
         control(R.id.playerReadout) { callbacks.onReadoutClicked() }
         readout.setOnLongClickListener {
@@ -328,6 +338,20 @@ class SubtitlePlayerOverlay(
     fun foldControls() = setExpanded(false)
 
     /**
+     * Show whether the subtitles follow the video app ([on]) and how
+     * ([status]). While they follow a video ([followsVideo]), the speed is
+     * the video's, so its button is off, and play / pause works only where
+     * the video app takes it ([canPlayPause]).
+     */
+    fun showFollow(on: Boolean, status: CharSequence, followsVideo: Boolean, canPlayPause: Boolean) {
+        followBtn.setBackgroundResource(if (on) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary)
+        followBtn.contentDescription = context.getString(if (on) R.string.player_follow_stop else R.string.player_follow_start)
+        followStatus.text = status
+        setUsable(speedBtn, !followsVideo)
+        setUsable(playBtn, !followsVideo || canPlayPause)
+    }
+
+    /**
      * Lock: touches pass through the subtitle to the app below (the window
      * is dimmed slightly, an Android 12+ requirement, see
      * [OverlayWindow.setClickThrough]) and the controls fold up. Unlock: the
@@ -399,6 +423,12 @@ class SubtitlePlayerOverlay(
         if (expanded && playing && readout.visibility != View.VISIBLE) {
             controlsRoot.postDelayed(autoMinimize, AUTO_HIDE_MS)
         }
+    }
+
+    /** Let [view] be used or not, dimmed while not. */
+    private fun setUsable(view: View, usable: Boolean) {
+        view.isEnabled = usable
+        view.alpha = if (usable) 1f else UNUSABLE_ALPHA
     }
 
     /** The control window changed size: keep it on screen once laid out. */
@@ -574,5 +604,7 @@ class SubtitlePlayerOverlay(
         const val MAX_SHOWN_CUES = 3
         const val PLACEHOLDER_KEY = "\u0000placeholder"
         const val PLACEHOLDER_ALPHA = 0.6f
+        /** Opacity of a control that can't be used now. */
+        const val UNUSABLE_ALPHA = 0.4f
     }
 }

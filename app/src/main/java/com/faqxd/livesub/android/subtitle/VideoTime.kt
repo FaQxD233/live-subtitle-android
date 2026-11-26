@@ -1,6 +1,7 @@
 package com.faqxd.livesub.android.subtitle
 
 import android.media.session.PlaybackState
+import kotlin.math.abs
 
 /**
  * Where a video another app plays is, from what its media session last
@@ -32,4 +33,27 @@ object VideoTime {
         val since = (now - updateTimeMs).coerceAtLeast(0L)
         return positionMs + (since * speed.toDouble()).toLong()
     }
+
+    /**
+     * Whether a clock following a video must be moved to match it: one
+     * plays while the other holds still, it runs at another speed than the
+     * playing video, or it is [toleranceMs] or more off. A smaller gap is
+     * the jitter of reports, and moving for it would make the subtitles
+     * flicker. A paused video's speed doesn't count: it may report 0.
+     */
+    fun needsSync(
+        clockPlaying: Boolean,
+        clockRate: Double,
+        clockPositionMs: Long,
+        videoPlaying: Boolean,
+        videoSpeed: Double,
+        videoPositionMs: Long,
+        toleranceMs: Long,
+    ): Boolean =
+        clockPlaying != videoPlaying ||
+            (videoPlaying && abs(clockRate - videoSpeed) > SPEED_EPSILON) ||
+            abs(clockPositionMs - videoPositionMs) >= toleranceMs
+
+    /** Speeds closer than this are the same (a Float speed read as Double). */
+    private const val SPEED_EPSILON = 0.001
 }

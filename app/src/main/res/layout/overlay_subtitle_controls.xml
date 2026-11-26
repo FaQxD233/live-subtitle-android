@@ -92,7 +92,7 @@
                 android:textColor="@color/status_connecting"
                 android:textSize="11sp" />
 
-            <!-- Phase 0 of following the video app (docs/plan-mediasession-sync.md): the media sessions readout. -->
+            <!-- The media sessions readout, for measuring (docs/plan-mediasession-sync.md). -->
             <Button
                 android:id="@+id/playerSessionsBtn"
                 style="@style/SubtitleControl"
@@ -125,6 +125,38 @@
                 android:layout_marginEnd="0dp"
                 android:contentDescription="@string/overlay_close"
                 android:src="@android:drawable/ic_menu_close_clear_cancel" />
+        </LinearLayout>
+
+        <!--
+            Following the video app: on / off, and a line saying how it goes;
+            a tap on that line switches between video apps, or follows
+            another video (docs/plan-mediasession-sync.md).
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/playerFollowBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:contentDescription="@string/player_follow_start"
+                android:text="@string/player_follow" />
+
+            <TextView
+                android:id="@+id/playerFollowStatus"
+                android:layout_width="0dp"
+                android:layout_height="30dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="center_vertical"
+                android:maxLines="1"
+                android:textColor="@color/hud_text_secondary"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <!-- Progress, and the playback speed next to it -->
@@ -210,7 +242,7 @@
         </LinearLayout>
 
         <!--
-            The media sessions readout, while turned on (phase 0). A tap
+            The media sessions readout, while turned on. A tap
             opens the notification access setting while that is missing; a
             long press copies the whole record.
         -->

@@ -116,10 +116,22 @@
     <string name="player_open_failed">无法打开文件：%1$s</string>
     <string name="player_stopped_live">已停止实时翻译，改为播放字幕。</string>
     <string name="live_stopped_player">已关闭字幕播放，改为实时翻译。</string>
-    <string name="player_sessions">媒体会话读数（测试）</string>
+    <string name="player_follow">跟随</string>
+    <string name="player_follow_start">跟随视频 App</string>
+    <string name="player_follow_stop">停止跟随视频 App</string>
+    <string name="player_follow_off">手动对齐</string>
+    <string name="player_follow_no_access">需要通知使用权 · 点这里开启</string>
+    <string name="player_follow_waiting">等待视频 · 暂时手动</string>
+    <string name="player_follow_no_position">%1$s 没报位置 · 暂时手动</string>
+    <string name="player_follow_on">跟随 %1$s</string>
+    <string name="player_follow_switchable">跟随 %1$s · 点击切换</string>
+    <string name="player_follow_ad">%1$s 在放广告 · 字幕等着</string>
+    <string name="player_follow_other_video">%1$s 换了视频 · 点这里接着跟</string>
+    <string name="player_follow_access">要跟随视频 App，请为 LiveBuddy 打开「通知使用权」（不会读取通知内容）。开关是灰的：先点一下，再到 应用信息 → ⋮ →「允许受限设置」。</string>
+    <string name="player_follow_no_settings">打不开通知使用权设置，请在系统设置里搜索「通知使用权」。</string>
+    <string name="player_locked_hint_following">已锁定，触摸会传到下层应用，字幕跟着视频走。要解锁，点小胶囊展开控制栏再点解锁按钮，或用通知栏里的「解锁」。</string>
+    <string name="player_sessions">媒体会话读数</string>
     <string name="player_sessions_label">会话</string>
-    <string name="player_sessions_access">要读取视频 App 的播放状态，请为 LiveBuddy 打开「通知使用权」（不会读取通知内容）。开关是灰的：先点一下，再到 应用信息 → ⋮ →「允许受限设置」。</string>
-    <string name="player_sessions_no_settings">打不开通知使用权设置，请在系统设置里搜索「通知使用权」。</string>
     <string name="player_sessions_copied">读数已复制</string>
 
     <!-- Settings -->

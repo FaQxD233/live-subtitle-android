@@ -115,11 +115,23 @@
     <string name="player_open_failed">Can\'t open the file: %1$s</string>
     <string name="player_stopped_live">Live translation was stopped to play subtitles.</string>
     <string name="live_stopped_player">Subtitle playback was closed for live translation.</string>
-    <!-- Phase 0 of following the video app (docs/plan-mediasession-sync.md) -->
-    <string name="player_sessions">Media sessions readout (test)</string>
+    <!-- Following the video app (docs/plan-mediasession-sync.md) -->
+    <string name="player_follow">Follow</string>
+    <string name="player_follow_start">Follow the video app</string>
+    <string name="player_follow_stop">Stop following the video app</string>
+    <string name="player_follow_off">Aligned by hand</string>
+    <string name="player_follow_no_access">Needs notification access · tap here</string>
+    <string name="player_follow_waiting">Waiting for a video · by hand meanwhile</string>
+    <string name="player_follow_no_position">%1$s gives no position · by hand</string>
+    <string name="player_follow_on">Following %1$s</string>
+    <string name="player_follow_switchable">Following %1$s · tap to switch</string>
+    <string name="player_follow_ad">%1$s shows an ad · subtitles wait</string>
+    <string name="player_follow_other_video">%1$s plays another video · tap to follow it</string>
+    <string name="player_follow_access">To follow the video app, turn on notification access for LiveBuddy (no notification is read). Greyed out? Tap it once, then App info → ⋮ → Allow restricted settings.</string>
+    <string name="player_follow_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
+    <string name="player_locked_hint_following">Locked: touches reach the app below, and the subtitles follow the video. To unlock, tap the small pill and then the unlock button, or use Unlock in the notification.</string>
+    <string name="player_sessions">Media sessions readout</string>
     <string name="player_sessions_label">Sessions</string>
-    <string name="player_sessions_access">To read the video app\'s playback state, turn on notification access for LiveBuddy (no notification is read). Greyed out? Tap it once, then App info → ⋮ → Allow restricted settings.</string>
-    <string name="player_sessions_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
     <string name="player_sessions_copied">Readout copied</string>
     <string name="player_time" translatable="false">%1$s / %2$s</string>
     <string name="player_back_label" translatable="false">−0.5</string>
