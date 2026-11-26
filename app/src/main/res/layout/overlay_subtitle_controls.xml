@@ -65,7 +65,7 @@
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp">
 
-        <!-- Header: time, the last shift, lock, minimize, close -->
+        <!-- Header: time, a brief note, lock, minimize, close -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -80,9 +80,9 @@
                 android:textColor="@color/hud_text_secondary"
                 android:textSize="12sp" />
 
-            <!-- Briefly names the last shift, e.g. "Subtitles 0.5 s later". -->
+            <!-- Briefly names the last shift ("Subtitles 0.5 s later") or where playback resumed. -->
             <TextView
-                android:id="@+id/playerShift"
+                android:id="@+id/playerNote"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
@@ -118,13 +118,30 @@
                 android:src="@android:drawable/ic_menu_close_clear_cancel" />
         </LinearLayout>
 
-        <SeekBar
-            android:id="@+id/playerSeek"
+        <!-- Progress, and the playback speed next to it -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:progressTint="@color/accent_bright"
-            android:thumbTint="@color/accent_bright" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <SeekBar
+                android:id="@+id/playerSeek"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progressTint="@color/accent_bright"
+                android:thumbTint="@color/accent_bright" />
+
+            <!-- A tap steps through the speeds, a long press goes back to 1×. -->
+            <Button
+                android:id="@+id/playerSpeedBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="44dp"
+                android:layout_marginEnd="0dp"
+                android:padding="0dp" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="wrap_content"

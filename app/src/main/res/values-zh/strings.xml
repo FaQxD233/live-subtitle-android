@@ -108,6 +108,8 @@
     <string name="player_larger">放大字幕</string>
     <string name="player_shifted_later">字幕推后 %1$s 秒</string>
     <string name="player_shifted_earlier">字幕提前 %1$s 秒</string>
+    <string name="player_speed">播放倍速 %1$s（长按恢复 1×）</string>
+    <string name="player_resumed">从 %1$s 继续</string>
     <string name="player_hint">视频开始时点「播放」。字幕慢了，听到那句话时点「下一句」；字幕快了，等人开口说这句时点「上一句」。播放时控制栏几秒后会收成小胶囊，点一下就能展开。</string>
     <string name="player_no_cues">这个文件里没有找到字幕。</string>
     <string name="player_file_too_large">文件太大（超过 %1$d MB）。</string>

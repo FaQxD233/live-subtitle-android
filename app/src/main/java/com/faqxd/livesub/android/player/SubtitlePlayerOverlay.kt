@@ -2,6 +2,7 @@ package com.faqxd.livesub.android.player
 
 import android.content.Context
 import android.graphics.Paint
+import android.os.SystemClock
 import android.text.format.DateUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -9,6 +10,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
@@ -30,13 +32,13 @@ import kotlin.math.roundToInt
  *    centered, white with a black outline on a box whose opacity follows
  *    the background opacity setting. Its window spans the screen width
  *    (long subtitles wrap within it) and is placed by its bottom edge (a
- *    two-line subtitle grows upwards); it is hidden between subtitles
- *    ([showText]). Its row drags up and down, and a tap brings the
- *    controls back;
+ *    two-line subtitle grows upwards), at a height kept for portrait and
+ *    landscape apart; it is hidden between subtitles ([showText]). Its row
+ *    drags up and down, and a tap brings the controls back;
  *  - the controls, a card in the caption overlay's style (time, lock,
- *    minimize, close; progress; previous / ±0.5 s / play / next, text
- *    size). Minimized, by hand or [AUTO_HIDE_MS] into playback, it folds
- *    into a small pill that a tap expands. It drags anywhere.
+ *    minimize, close; progress and speed; previous / ±0.5 s / play / next,
+ *    text size). Minimized, by hand or [AUTO_HIDE_MS] into playback, it
+ *    folds into a small pill that a tap expands. It drags anywhere.
  * Locking lets touches pass through the subtitle to the app below (the
  * controls fold up); the pill then shows a lock, and the card's lock
  * button unlocks. Locked, a double tap anywhere plays or pauses
@@ -58,11 +60,21 @@ class SubtitlePlayerOverlay(
         fun onShiftClicked(deltaMs: Long)
         /** The user dragged the progress bar to [positionMs]. */
         fun onSeek(positionMs: Long)
+        /** Step to the next playback speed. */
+        fun onSpeedClicked()
+        /** Back to normal speed. */
+        fun onSpeedReset()
         fun onFontSizeClicked(deltaSp: Int)
         /** The controls were expanded: they need progress updates now. */
         fun onControlsExpanded()
         /** Fired after the subtitle was locked (touches pass through) or unlocked. */
         fun onLockChanged(locked: Boolean)
+        /**
+         * Locked, a double tap went down in the app below [sinceMs] ago (it
+         * is confirmed only once no third touch followed): play or pause as
+         * of then, as the video app did.
+         */
+        fun onDoubleTap(sinceMs: Long)
         fun onCloseClicked()
     }
 
@@ -75,6 +87,8 @@ class SubtitlePlayerOverlay(
     private val box: View = textRoot.findViewById(R.id.subtitleBox)
     private val outline: TextView = textRoot.findViewById(R.id.subtitleOutline)
     private val text: TextView = textRoot.findViewById(R.id.subtitleText)
+    // The orientation the subtitle's height was taken for (each has its own).
+    private var textLandscape = isLandscape()
 
     // ---- The control window ----
     private val controlsRoot: View = View.inflate(context, R.layout.overlay_subtitle_controls, null)
@@ -84,8 +98,9 @@ class SubtitlePlayerOverlay(
     private val pillLock: View = controlsRoot.findViewById(R.id.playerPillLock)
     private val card: View = controlsRoot.findViewById(R.id.playerCard)
     private val time: TextView = controlsRoot.findViewById(R.id.playerTime)
-    private val shiftLabel: TextView = controlsRoot.findViewById(R.id.playerShift)
+    private val noteLabel: TextView = controlsRoot.findViewById(R.id.playerNote)
     private val seekBar: SeekBar = controlsRoot.findViewById(R.id.playerSeek)
+    private val speedBtn: Button = controlsRoot.findViewById(R.id.playerSpeedBtn)
     private val playBtn: ImageButton = controlsRoot.findViewById(R.id.playerPlayBtn)
     private val lockBtn: ImageButton = controlsRoot.findViewById(R.id.playerLockBtn)
 
@@ -103,10 +118,18 @@ class SubtitlePlayerOverlay(
         revealPending = false
         if (shownKey.isNotEmpty()) textRoot.visibility = View.VISIBLE
     }
-    private val hideShift = Runnable { shiftLabel.text = "" }
+    private val hideNote = Runnable { noteLabel.text = "" }
     private val autoMinimize = Runnable { setExpanded(false) }
-    // When the last touch outside the controls went down, while locked; 0 after a double tap.
-    private var lastOutsideDown = 0L
+
+    // Locked, double taps anywhere play or pause (see onOutsideTouch).
+    private val doubleTapWindowMs =
+        (ViewConfiguration.getTapTimeout() + ViewConfiguration.getDoubleTapTimeout()).toLong()
+    private val doubleTap = IsolatedDoubleTap(doubleTapWindowMs)
+    // When the second touch of the double tap waiting to be confirmed went down (uptime).
+    private var doubleTapDown = 0L
+    private val confirmDoubleTap = Runnable {
+        callbacks.onDoubleTap(SystemClock.uptimeMillis() - doubleTapDown)
+    }
 
     /** True while touches pass through the subtitle to the app below. */
     val isLocked: Boolean
@@ -122,7 +145,7 @@ class SubtitlePlayerOverlay(
         textRoot.setOnTouchListener(
             textWindow.dragListener(clickOnTap = true, verticalOnly = true) {
                 AppSettings.saveWindowGeometry(
-                    context, AppSettings.WINDOW_SUBTITLE, textWindow.params.x, textWindow.params.y,
+                    context, subtitleWindowKey(textLandscape), textWindow.params.x, textWindow.params.y,
                 )
             }
         )
@@ -150,6 +173,12 @@ class SubtitlePlayerOverlay(
         control(R.id.playerSmallerBtn) { callbacks.onFontSizeClicked(-FONT_STEP_SP) }
         control(R.id.playerLargerBtn) { callbacks.onFontSizeClicked(FONT_STEP_SP) }
         control(R.id.playerPlayBtn) { callbacks.onPlayPauseClicked() }
+        control(R.id.playerSpeedBtn) { callbacks.onSpeedClicked() }
+        speedBtn.setOnLongClickListener {
+            callbacks.onSpeedReset()
+            touched()
+            true
+        }
         control(R.id.playerLockBtn) { setLocked(!isLocked) }
         control(R.id.playerMinimizeBtn) { setExpanded(false) }
         control(R.id.playerCloseBtn) { callbacks.onCloseClicked() }
@@ -171,6 +200,7 @@ class SubtitlePlayerOverlay(
         // The outline layer strokes the glyphs; the fill layer on top has the same layout.
         outline.paint.style = Paint.Style.STROKE
         outline.paint.strokeJoin = Paint.Join.ROUND
+        setSpeed(1.0)
         applyStyle()
         refreshText()
     }
@@ -188,22 +218,39 @@ class SubtitlePlayerOverlay(
 
     fun detach() {
         controlsRoot.removeCallbacks(autoMinimize)
-        shiftLabel.removeCallbacks(hideShift)
+        controlsRoot.removeCallbacks(confirmDoubleTap)
+        noteLabel.removeCallbacks(hideNote)
         textRoot.removeCallbacks(reveal)
         textWindow.detach()
         controlsWindow.detach()
     }
 
-    /** The screen size changed: keep both windows on screen (the subtitle rewraps by itself). */
+    /**
+     * The screen size changed: keep both windows on screen (the subtitle
+     * rewraps by itself), and after a rotation put the subtitle at the
+     * height kept for the new orientation, since a portrait video usually
+     * sits high on the screen and a landscape one fills it.
+     */
     fun onScreenChanged() {
+        val landscape = isLandscape()
+        if (landscape != textLandscape) {
+            textLandscape = landscape
+            textWindow.params.y = subtitleBottom(landscape)
+        }
         textWindow.onScreenChanged()
         controlsWindow.onScreenChanged()
     }
 
-    /** Apply a new settings snapshot (text size, background opacity). */
+    /** Apply a new settings snapshot (text size, background opacity, saved heights). */
     fun updateSettings(s: AppSettings) {
         settings = s
         applyStyle()
+    }
+
+    /** A newly loaded subtitle opens like the player does: unlocked, with the controls out. */
+    fun showNewSubtitles() {
+        setLocked(false)
+        setExpanded(true)
     }
 
     /** Show the cues active now as one subtitle (their text is HTML); nothing when there are none. */
@@ -221,17 +268,29 @@ class SubtitlePlayerOverlay(
         setPlaying(playing)
     }
 
+    /** Name the playback speed on its button, e.g. "1.25×". */
+    fun setSpeed(rate: Double) {
+        val label = String.format(Locale.US, "%.2f", rate).trimEnd('0').trimEnd('.') + "×"
+        speedBtn.text = label
+        speedBtn.contentDescription = context.getString(R.string.player_speed, label)
+    }
+
     /** Briefly name a shift of the subtitles by [deltaMs] of playback position. */
     fun showShift(deltaMs: Long) {
         val seconds = String.format(Locale.US, "%.1f", abs(deltaMs) / 1000.0)
         // Moving the position back makes the subtitles come later.
-        shiftLabel.text = context.getString(
-            if (deltaMs < 0) R.string.player_shifted_later else R.string.player_shifted_earlier,
-            seconds,
+        showNote(
+            context.getString(
+                if (deltaMs < 0) R.string.player_shifted_later else R.string.player_shifted_earlier,
+                seconds,
+            ),
+            SHIFT_NOTE_MS,
         )
-        shiftLabel.removeCallbacks(hideShift)
-        shiftLabel.postDelayed(hideShift, SHIFT_LABEL_MS)
     }
+
+    /** Briefly say that playback continues at [positionMs], where it stopped last time. */
+    fun showResumed(positionMs: Long) =
+        showNote(context.getString(R.string.player_resumed, clockText(positionMs)), RESUMED_NOTE_MS)
 
     /**
      * Lock: touches pass through the subtitle to the app below (the window
@@ -244,7 +303,7 @@ class SubtitlePlayerOverlay(
         lockBtn.setImageResource(if (locked) R.drawable.ic_overlay_unlock else R.drawable.ic_overlay_lock)
         lockBtn.contentDescription = context.getString(if (locked) R.string.player_unlock else R.string.player_lock)
         pillLock.visibility = if (locked) View.VISIBLE else View.GONE
-        if (locked) setExpanded(false)
+        if (locked) setExpanded(false) else controlsRoot.removeCallbacks(confirmDoubleTap)
         refreshText()
         callbacks.onLockChanged(locked)
     }
@@ -281,22 +340,24 @@ class SubtitlePlayerOverlay(
     }
 
     /**
-     * A touch went down outside the controls, in the app below. Locked, two
-     * in quick succession play or pause, as a double tap does in many video
-     * apps. Android tells an overlay only when a touch that goes to another
-     * app went down, not where (the coordinates come zeroed), so this is a
-     * double tap anywhere on the screen, timed from down to down: a tap's
-     * length plus the double-tap timeout.
+     * A touch went down outside the controls, in the app below. Locked, a
+     * double tap plays or pauses, as it does in many video apps. Android
+     * tells an overlay only that a touch that goes to another app went
+     * down, not where (the coordinates come zeroed) and not whether it was
+     * a keyboard, so this is a double tap anywhere on the screen, timed
+     * from down to down (a tap's length plus the double-tap timeout). To
+     * leave typing and quick flicks out, it counts only when no other
+     * touch came shortly before or after it ([IsolatedDoubleTap]): so it
+     * is confirmed one window later, and reported with how long ago it
+     * happened.
      */
     private fun onOutsideTouch(downTime: Long) {
         if (!isLocked) return
-        val doubleTapMs = ViewConfiguration.getTapTimeout() + ViewConfiguration.getDoubleTapTimeout()
-        if (downTime - lastOutsideDown <= doubleTapMs) {
-            // A third touch starts the next double tap.
-            lastOutsideDown = 0L
-            callbacks.onPlayPauseClicked()
-        } else {
-            lastOutsideDown = downTime
+        // Another touch soon after a pair makes it a burst.
+        controlsRoot.removeCallbacks(confirmDoubleTap)
+        if (doubleTap.onDown(downTime)) {
+            doubleTapDown = downTime
+            controlsRoot.postDelayed(confirmDoubleTap, doubleTapWindowMs)
         }
     }
 
@@ -312,6 +373,13 @@ class SubtitlePlayerOverlay(
             action()
             touched()
         }
+    }
+
+    /** Show [text] in the card's header for [durationMs]. */
+    private fun showNote(text: CharSequence, durationMs: Long) {
+        noteLabel.text = text
+        noteLabel.removeCallbacks(hideNote)
+        noteLabel.postDelayed(hideNote, durationMs)
     }
 
     /**
@@ -399,22 +467,29 @@ class SubtitlePlayerOverlay(
         if (textRoot.isShown) showText()
     }
 
-    /** Across the screen, by its bottom edge: at the saved height or low on the screen. */
-    private fun textLayoutParams(): WindowManager.LayoutParams {
-        val metrics = context.resources.displayMetrics
-        return OverlayWindow.layoutParams(
+    /** Across the screen, by its bottom edge, at the height kept for the orientation. */
+    private fun textLayoutParams(): WindowManager.LayoutParams =
+        OverlayWindow.layoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             x = 0
-            y = if (settings.subtitleBottom != Int.MIN_VALUE) {
-                settings.subtitleBottom
-            } else {
-                (metrics.heightPixels * DEFAULT_BOTTOM_FRACTION).toInt()
-            }
+            y = subtitleBottom(isLandscape())
         }
+
+    /** The subtitle's distance from the screen bottom in [landscape] or portrait: as saved, else low on the screen. */
+    private fun subtitleBottom(landscape: Boolean): Int {
+        val saved = if (landscape) settings.subtitleBottomLandscape else settings.subtitleBottomPortrait
+        if (saved != Int.MIN_VALUE) return saved
+        return (context.resources.displayMetrics.heightPixels * DEFAULT_BOTTOM_FRACTION).toInt()
     }
+
+    private fun subtitleWindowKey(landscape: Boolean): String =
+        if (landscape) AppSettings.WINDOW_SUBTITLE_LANDSCAPE else AppSettings.WINDOW_SUBTITLE
+
+    private fun isLandscape(): Boolean =
+        context.resources.displayMetrics.let { it.widthPixels > it.heightPixels }
 
     /** At the saved place, else near the left edge, a little above the middle. */
     private fun controlsLayoutParams(): WindowManager.LayoutParams {
@@ -449,7 +524,8 @@ class SubtitlePlayerOverlay(
         const val FONT_STEP_SP = 2
         /** Resolution of the progress bar. */
         const val SEEK_STEP_MS = 100L
-        const val SHIFT_LABEL_MS = 1_500L
+        const val SHIFT_NOTE_MS = 1_500L
+        const val RESUMED_NOTE_MS = 4_000L
         /** Stroke width relative to the text size; half of it shows around the glyphs. */
         const val OUTLINE_WIDTH_RATIO = 0.12f
         /** Overlapping cues (signs and dialogue) shown at once. */

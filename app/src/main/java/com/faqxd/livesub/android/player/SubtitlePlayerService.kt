@@ -1,14 +1,18 @@
 package com.faqxd.livesub.android.player
 
+import android.Manifest
 import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.net.Uri
@@ -20,6 +24,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.MainActivity
@@ -29,12 +34,15 @@ import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.subtitle.CueTimeline
 import com.faqxd.livesub.android.subtitle.SubtitleClock
 import com.faqxd.livesub.android.subtitle.SubtitleCue
+import java.io.File
 
 /**
  * Foreground service that plays subtitles over other apps, for videos that
  * have none: the cues loaded into [SubtitlePlayback] are shown in a
  * [SubtitlePlayerOverlay] on a clock the user starts, shifts and aligns by
- * hand (play / pause, ±0.5 s, previous / next line, progress bar).
+ * hand (play / pause, ±0.5 s, previous / next line, progress bar, speed).
+ * The clock pauses when the screen goes off, and playback of a subtitle
+ * continues where it stopped last time ([SubtitlePositions]).
  *
  * It plays no audio or video, so it is a special-use foreground service.
  * Live translation and the player both float over other apps, so starting
@@ -46,6 +54,8 @@ class SubtitlePlayerService : Service() {
     private val clock = SubtitleClock(SystemClock::elapsedRealtime)
     private var timeline = CueTimeline(emptyList())
     private var title = ""
+    // Names the subtitle playing, for SubtitlePositions; empty while none is.
+    private var key = ""
     private var overlay: SubtitlePlayerOverlay? = null
     private val notificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -56,6 +66,14 @@ class SubtitlePlayerService : Service() {
     // framework holds the listener only weakly, so keep a field reference.
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
         overlay?.updateSettings(AppSettings.load(this))
+    }
+
+    // Most video apps pause when the screen goes off; the subtitles must
+    // not run on meanwhile.
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (clock.isPlaying) togglePlayback()
+        }
     }
 
     private val overlayCallbacks = object : SubtitlePlayerOverlay.Callbacks {
@@ -77,6 +95,10 @@ class SubtitlePlayerService : Service() {
 
         override fun onSeek(positionMs: Long) = seekTo(positionMs)
 
+        override fun onSpeedClicked() = setSpeed(nextSpeed(clock.rate))
+
+        override fun onSpeedReset() = setSpeed(1.0)
+
         override fun onFontSizeClicked(deltaSp: Int) {
             val size = AppSettings.load(this@SubtitlePlayerService).subtitleFontSize + deltaSp
             // The preference listener applies it.
@@ -94,6 +116,9 @@ class SubtitlePlayerService : Service() {
             }
         }
 
+        // The video app played or paused when the second tap went down.
+        override fun onDoubleTap(sinceMs: Long) = togglePlayback(sinceMs)
+
         override fun onCloseClicked() = stopSelf()
     }
 
@@ -102,6 +127,10 @@ class SubtitlePlayerService : Service() {
     override fun onCreate() {
         super.onCreate()
         AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
+        // Sent by the system only (its UID), which a not-exported receiver still gets.
+        ContextCompat.registerReceiver(
+            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -130,7 +159,10 @@ class SubtitlePlayerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (overlay != null) savePosition()
+        running = false
         AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
+        unregisterReceiver(screenOffReceiver)
         handler.removeCallbacks(tick)
         // Windows added through WindowManager outlive the service unless removed.
         overlay?.detach()
@@ -138,12 +170,22 @@ class SubtitlePlayerService : Service() {
         notificationManager.cancel(NOTIF_ID)
     }
 
-    /** Play what [SubtitlePlayback] holds from the start, paused until the user taps play. */
+    /**
+     * Play what [SubtitlePlayback] holds, paused until the user taps play:
+     * from where it stopped last time, else from the start.
+     */
     private fun start() {
+        // A subtitle playing until now is replaced: remember where it was.
+        if (overlay != null) savePosition()
         title = SubtitlePlayback.title
+        key = SubtitlePlayback.key
         timeline = CueTimeline(SubtitlePlayback.cues)
+        val resumeAt = SubtitlePositions.get(this, key)?.takeIf { it < timeline.durationMs }
         clock.pause()
-        clock.seekTo(0)
+        clock.seekTo(resumeAt ?: 0L)
+        // Before live translation stops: its run is kept as it ends, and
+        // dropping old runs then spares the one shown here (playingRecord).
+        running = true
         startForegroundWithType()
         if (stopService(Intent(this, LiveTranslateService::class.java))) {
             Toast.makeText(this, R.string.player_stopped_live, Toast.LENGTH_LONG).show()
@@ -160,6 +202,10 @@ class SubtitlePlayerService : Service() {
             stopSelf()
             return
         }
+        // Another subtitle opened over a running player starts out as a new player would.
+        shown.showNewSubtitles()
+        shown.setSpeed(clock.rate)
+        resumeAt?.let { shown.showResumed(it) }
         if (AppSettings.takePlayerHint(this)) {
             Toast.makeText(this, R.string.player_hint, Toast.LENGTH_LONG).show()
         }
@@ -167,13 +213,18 @@ class SubtitlePlayerService : Service() {
         updateNotification()
     }
 
-    private fun togglePlayback() {
+    /**
+     * Play or pause, as of [sinceMs] ago: a double tap is only confirmed
+     * a moment after the video app reacted to it.
+     */
+    private fun togglePlayback(sinceMs: Long = 0L) {
+        val at = SystemClock.elapsedRealtime() - sinceMs
         if (clock.isPlaying) {
-            clock.pause()
+            clock.pause(at)
         } else {
             // Played to the end: start over.
             if (clock.position() >= timeline.durationMs) clock.seekTo(0)
-            clock.play()
+            clock.play(at)
         }
         render()
         updateNotification()
@@ -182,6 +233,20 @@ class SubtitlePlayerService : Service() {
     private fun seekTo(positionMs: Long) {
         clock.seekTo(positionMs.coerceIn(0L, timeline.durationMs))
         render()
+    }
+
+    private fun setSpeed(rate: Double) {
+        clock.rate = rate
+        overlay?.setSpeed(rate)
+        render()
+    }
+
+    /** Remember where playback of the subtitle is, unless it played to the end or had barely begun. */
+    private fun savePosition() {
+        if (key.isEmpty()) return
+        val position = clock.position()
+        val worthKeeping = position >= RESUME_MIN_MS && position < timeline.durationMs
+        SubtitlePositions.put(this, key, if (worthKeeping) position else null)
     }
 
     /**
@@ -202,7 +267,8 @@ class SubtitlePlayerService : Service() {
         shown.showCues(timeline.active(position))
         shown.setProgress(position, timeline.durationMs, clock.isPlaying)
         if (!clock.isPlaying) return
-        var delay = (timeline.nextChange(position) ?: (timeline.durationMs + END_GRACE_MS)) - position
+        val nextChange = timeline.nextChange(position) ?: (timeline.durationMs + END_GRACE_MS)
+        var delay = clock.timeUntil(nextChange)
         if (shown.showsControls) delay = minOf(delay, PROGRESS_TICK_MS)
         handler.postDelayed(tick, delay.coerceAtLeast(MIN_TICK_MS))
     }
@@ -274,12 +340,24 @@ class SubtitlePlayerService : Service() {
         private const val END_GRACE_MS = 1_000L
         /** "Previous" restarts the current line once it has shown this long. */
         private const val RESTART_LINE_AFTER_MS = 1_000L
+        /** Stopped earlier than this into a subtitle, it starts from the beginning next time. */
+        private const val RESUME_MIN_MS = 10_000L
+        /** The speed button steps through these, from the slowest again after the fastest. */
+        private val SPEEDS = doubleArrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+        private const val REQUEST_NOTIFICATIONS = 1
+
+        // A player is up (main thread only).
+        private var running = false
 
         /**
-         * Play [cues] (HTML text) titled [title] over other apps. Without the
-         * overlay permission it says so and opens that setting instead.
+         * Play [cues] (HTML text) titled [title] over other apps. [key]
+         * names the subtitle so that playback continues where it stopped
+         * last time; [record] is the kept run they come from, if any.
+         * Without the overlay permission it opens that setting instead and
+         * plays once the user is back with it granted ([resumeIfPermitted]).
          */
-        fun play(activity: Activity, title: String, cues: List<SubtitleCue>) {
+        fun play(activity: Activity, title: String, cues: List<SubtitleCue>, key: String, record: File? = null) {
+            SubtitlePlayback.load(title, cues, key, record)
             if (!Settings.canDrawOverlays(activity)) {
                 Toast.makeText(activity, R.string.perm_overlay_rationale, Toast.LENGTH_LONG).show()
                 try {
@@ -289,16 +367,43 @@ class SubtitlePlayerService : Service() {
                             Uri.parse("package:${activity.packageName}"),
                         )
                     )
+                    SubtitlePlayback.awaitingOverlayPermission = true
                 } catch (e: Exception) {
                     Log.w(TAG, "overlay permission screen unavailable: ${e.message}")
                 }
                 return
             }
-            SubtitlePlayback.load(title, cues)
+            startPlayer(activity)
+        }
+
+        /** [activity] is back on screen: play what waited for the overlay permission, if it was granted. */
+        fun resumeIfPermitted(activity: Activity) {
+            if (!SubtitlePlayback.awaitingOverlayPermission) return
+            SubtitlePlayback.awaitingOverlayPermission = false
+            if (Settings.canDrawOverlays(activity)) startPlayer(activity)
+        }
+
+        /** The kept run the player shows, which dropping old runs must spare; null if none. */
+        fun playingRecord(): File? = if (running) SubtitlePlayback.record else null
+
+        private fun startPlayer(activity: Activity) {
+            // The notification's play, unlock and stop need it on Android 13+;
+            // the player runs either way, and the notification shows once allowed.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS,
+                )
+            }
             ContextCompat.startForegroundService(
                 activity,
                 Intent(activity, SubtitlePlayerService::class.java).setAction(ACTION_PLAY),
             )
         }
+
+        /** The speed after [rate] among [SPEEDS], the slowest after the fastest. */
+        private fun nextSpeed(rate: Double): Double = SPEEDS.firstOrNull { it > rate + 0.01 } ?: SPEEDS.first()
     }
 }

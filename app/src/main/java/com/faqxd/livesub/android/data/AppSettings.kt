@@ -75,10 +75,12 @@ data class AppSettings(
     var overlayWidth: Int = Int.MIN_VALUE,
     var overlayHeight: Int = Int.MIN_VALUE,
     // The subtitle player's own settings, saved by their own functions. The
-    // subtitle is placed by its bottom edge (px above the screen bottom), the
-    // control window by its top-left corner; MIN_VALUE = unset.
+    // subtitle is placed by its bottom edge (px above the screen bottom),
+    // kept for portrait and landscape apart; the control window by its
+    // top-left corner; MIN_VALUE = unset.
     var subtitleFontSize: Int = DEFAULT_SUBTITLE_FONT_SIZE,
-    var subtitleBottom: Int = Int.MIN_VALUE,
+    var subtitleBottomPortrait: Int = Int.MIN_VALUE,
+    var subtitleBottomLandscape: Int = Int.MIN_VALUE,
     var playerControlsX: Int = Int.MIN_VALUE,
     var playerControlsY: Int = Int.MIN_VALUE,
 ) {
@@ -201,7 +203,8 @@ data class AppSettings(
                 overlayHeight = prefs.getInt("overlay_height", Int.MIN_VALUE),
                 subtitleFontSize = prefs.getInt("subtitle_font_size", DEFAULT_SUBTITLE_FONT_SIZE)
                     .coerceIn(MIN_SUBTITLE_FONT_SIZE, MAX_SUBTITLE_FONT_SIZE),
-                subtitleBottom = prefs.getInt("${WINDOW_SUBTITLE}_y", Int.MIN_VALUE),
+                subtitleBottomPortrait = prefs.getInt("${WINDOW_SUBTITLE}_y", Int.MIN_VALUE),
+                subtitleBottomLandscape = prefs.getInt("${WINDOW_SUBTITLE_LANDSCAPE}_y", Int.MIN_VALUE),
                 playerControlsX = prefs.getInt("${WINDOW_PLAYER_CONTROLS}_x", Int.MIN_VALUE),
                 playerControlsY = prefs.getInt("${WINDOW_PLAYER_CONTROLS}_y", Int.MIN_VALUE),
             )
@@ -242,8 +245,13 @@ data class AppSettings(
 
         /** Key prefix of the caption overlay's geometry. */
         const val WINDOW_OVERLAY = "overlay"
-        /** Key prefix of the subtitle player's subtitle position (its y counts up from the bottom). */
+        /**
+         * Key prefix of the subtitle player's subtitle position in portrait
+         * (its y counts up from the bottom); earlier versions kept the only one here.
+         */
         const val WINDOW_SUBTITLE = "subtitle_text"
+        /** Key prefix of the subtitle player's subtitle position in landscape. */
+        const val WINDOW_SUBTITLE_LANDSCAPE = "subtitle_text_landscape"
         /** Key prefix of the subtitle player's control window position. */
         const val WINDOW_PLAYER_CONTROLS = "player_controls"
 

@@ -99,16 +99,17 @@ object TranscriptStore {
     /**
      * The run ends: keep it as a recent transcript if it is worth keeping
      * (see [TranscriptRecorder.EndedSession.isWorthKeeping]), otherwise
-     * drop its journal. Returns whether it was kept.
+     * drop its journal. Making room for it never drops [spare], a recent
+     * run in use (the subtitle player shows it). Returns whether it was kept.
      */
-    fun endSession(): Boolean {
+    fun endSession(spare: File? = null): Boolean {
         val ended = recorder.endSession() ?: return false
         val app = appContext ?: return false
         val keep = ended.isWorthKeeping
         // Queued after the appends of the lines just finished.
         runIo("keeping the run") {
             val journal = journalFile(app)
-            if (keep) keepRecent(app, journal, ended.startedAt, ended.endedAt) else journal.delete()
+            if (keep) keepRecent(app, journal, ended.startedAt, ended.endedAt, spare) else journal.delete()
         }
         return keep
     }
@@ -217,13 +218,16 @@ object TranscriptStore {
     /** Null while shared storage is unavailable. */
     private fun textDir(context: Context): File? = context.getExternalFilesDir(TEXT_DIR)
 
-    /** Move [journal] into the recent runs, dropping the oldest beyond [MAX_RECENT]. */
-    private fun keepRecent(context: Context, journal: File, startedAt: Long, endedAt: Long) {
+    /**
+     * Move [journal] into the recent runs, dropping the oldest beyond
+     * [MAX_RECENT] except [spare] (which then stays one more for a while).
+     */
+    private fun keepRecent(context: Context, journal: File, startedAt: Long, endedAt: Long, spare: File? = null) {
         val dir = recentDir(context).apply { mkdirs() }
         if (!journal.renameTo(File(dir, "${startedAt}_$endedAt$JOURNAL_SUFFIX"))) {
             throw IOException("can't move ${journal.name}")
         }
-        journals(dir, saved = false).drop(MAX_RECENT).forEach { it.file.delete() }
+        journals(dir, saved = false).drop(MAX_RECENT).filter { it.file != spare }.forEach { it.file.delete() }
         notifyChanged()
     }
 

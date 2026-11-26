@@ -348,7 +348,9 @@ class LiveTranslateService : Service() {
         notificationManager.cancel(NOTIF_ID)
         // Finish (and persist) the lines still in progress, and keep the run
         // for the transcript list unless it is too short or has no captions.
-        if (TranscriptStore.endSession()) {
+        // Starting the subtitle player stops this service: a recent run it is
+        // about to play must not be dropped to make room for this one.
+        if (TranscriptStore.endSession(spare = SubtitlePlayerService.playingRecord())) {
             Toast.makeText(applicationContext, R.string.transcript_kept, Toast.LENGTH_LONG).show()
         }
         scope.coroutineContext[Job]?.cancel()

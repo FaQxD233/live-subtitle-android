@@ -204,6 +204,8 @@ class MainActivity : AppCompatActivity() {
         if (waitingForOverlayPermission && pendingStart) {
             handleOverlayPermissionReturn()
         }
+        // A subtitle file picked before the overlay permission was granted.
+        SubtitlePlayerService.resumeIfPermitted(this)
     }
 
     private fun applySettingsToUi() {
@@ -398,7 +400,7 @@ class MainActivity : AppCompatActivity() {
                 showToast(getString(R.string.player_no_cues))
                 return@launch
             }
-            SubtitlePlayerService.play(this@MainActivity, title, cues)
+            SubtitlePlayerService.play(this@MainActivity, title, cues, key = uri.toString())
         }
     }
 

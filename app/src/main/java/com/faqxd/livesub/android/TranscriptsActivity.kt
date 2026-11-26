@@ -67,6 +67,12 @@ class TranscriptsActivity : AppCompatActivity() {
         reload()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // A run played before the overlay permission was granted.
+        SubtitlePlayerService.resumeIfPermitted(this)
+    }
+
     override fun onStop() {
         super.onStop()
         TranscriptStore.setOnChangedListener(null)
@@ -255,7 +261,9 @@ class TranscriptsActivity : AppCompatActivity() {
     ) {
         // Recorded captions are plain text; the player renders HTML.
         val cues = TranscriptCues.build(entries, stream).map { it.copy(text = TextUtils.htmlEncode(it.text)) }
-        SubtitlePlayerService.play(this, runTitle(item), cues)
+        // Keyed by the run's file name, which saving the run keeps; both
+        // streams share the run's timing, so they continue at the same place.
+        SubtitlePlayerService.play(this, runTitle(item), cues, key = "run:${item.file.name}", record = item.file)
     }
 
     /** The entries of [item], or null (with a toast) if it can't be read any more. */
