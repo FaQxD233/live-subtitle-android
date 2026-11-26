@@ -89,6 +89,21 @@
                 android:value="Shows a subtitle file the user picked on top of other apps, timed by the user to the video they are watching." />
         </service>
 
+        <!--
+            The app's notification listener, for its access alone: with it the
+            subtitle player may list other apps' media sessions, to follow the
+            video app. It reads no notification and asks to be unbound as soon
+            as it connects (see the class).
+        -->
+        <service
+            android:name=".player.MediaListenerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Quick Settings tile: start / stop the translation pipeline. -->
         <service
             android:name=".service.LiveTileService"

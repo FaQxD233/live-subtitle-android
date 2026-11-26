@@ -8,6 +8,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -44,6 +46,10 @@ import java.io.File
  * The clock pauses when the screen goes off, and playback of a subtitle
  * continues where it stopped last time ([SubtitlePositions]).
  *
+ * For now the controls can also show a readout of the media sessions
+ * other apps publish ([MediaSessionProbe]): phase 0 of following the
+ * video app (docs/plan-mediasession-sync.md).
+ *
  * It plays no audio or video, so it is a special-use foreground service.
  * Live translation and the player both float over other apps, so starting
  * one stops the other. Main thread only.
@@ -61,6 +67,9 @@ class SubtitlePlayerService : Service() {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
     private val tick = Runnable { render() }
+    // The media sessions readout, while turned on (phase 0, see the class).
+    private var probe: MediaSessionProbe? = null
+    private val probeTick = Runnable { refreshProbe() }
 
     // The text size and background opacity apply while playing. The
     // framework holds the listener only weakly, so keep a field reference.
@@ -106,7 +115,18 @@ class SubtitlePlayerService : Service() {
         }
 
         // Folded up, the controls only needed an update when the subtitle changed.
-        override fun onControlsExpanded() = render()
+        override fun onControlsExpanded() {
+            render()
+            refreshProbe()
+        }
+
+        override fun onSessionsClicked() = toggleProbe()
+
+        override fun onReadoutClicked() {
+            if (!MediaListenerService.isGranted(this@SubtitlePlayerService)) openNotificationAccess()
+        }
+
+        override fun onReadoutLongPressed() = copyProbeRecord()
 
         override fun onLockChanged(locked: Boolean) {
             // The notification offers "Unlock" while locked.
@@ -164,6 +184,9 @@ class SubtitlePlayerService : Service() {
         AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
         unregisterReceiver(screenOffReceiver)
         handler.removeCallbacks(tick)
+        probe?.stop()
+        probe = null
+        handler.removeCallbacks(probeTick)
         // Windows added through WindowManager outlive the service unless removed.
         overlay?.detach()
         overlay = null
@@ -273,6 +296,55 @@ class SubtitlePlayerService : Service() {
         handler.postDelayed(tick, delay.coerceAtLeast(MIN_TICK_MS))
     }
 
+    /**
+     * Turn the media sessions readout on or off. Turned on without
+     * notification access, it sends the user to that setting first.
+     */
+    private fun toggleProbe() {
+        val running = probe
+        if (running != null) {
+            running.stop()
+            probe = null
+            handler.removeCallbacks(probeTick)
+            overlay?.showReadout(null)
+            return
+        }
+        probe = MediaSessionProbe(this, handler)
+        if (!MediaListenerService.isGranted(this)) openNotificationAccess()
+        refreshProbe()
+    }
+
+    /**
+     * Catch the probe up, every [PROBE_TICK_MS] while it is on: it keeps
+     * measuring with the controls folded, and its readout shows on the
+     * expanded ones.
+     */
+    private fun refreshProbe() {
+        handler.removeCallbacks(probeTick)
+        val running = probe ?: return
+        running.refresh()
+        overlay?.takeIf { it.showsControls }?.showReadout(running.readout())
+        handler.postDelayed(probeTick, PROBE_TICK_MS)
+    }
+
+    /** Open the notification access setting, with the controls folded out of its way. */
+    private fun openNotificationAccess() {
+        if (MediaListenerService.openSettings(this)) {
+            Toast.makeText(this, R.string.player_sessions_access, Toast.LENGTH_LONG).show()
+            overlay?.foldControls()
+        } else {
+            Toast.makeText(this, R.string.player_sessions_no_settings, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Copy the probe's whole record, to paste it back to whoever reads it. */
+    private fun copyProbeRecord() {
+        val running = probe ?: return
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.player_sessions), running.report()))
+        Toast.makeText(this, R.string.player_sessions_copied, Toast.LENGTH_SHORT).show()
+    }
+
     private fun startForegroundWithType() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -335,6 +407,8 @@ class SubtitlePlayerService : Service() {
         private const val ACTION_STOP = "com.faqxd.livesub.android.player.STOP"
         /** Refresh rate of the time and progress bar while the control bar shows. */
         private const val PROGRESS_TICK_MS = 250L
+        /** Refresh rate of the media sessions readout, which extrapolates the positions it shows. */
+        private const val PROBE_TICK_MS = 500L
         private const val MIN_TICK_MS = 16L
         /** Playback pauses this long after the last cue ended. */
         private const val END_GRACE_MS = 1_000L

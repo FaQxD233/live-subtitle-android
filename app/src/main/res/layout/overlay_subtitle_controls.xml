@@ -92,6 +92,15 @@
                 android:textColor="@color/status_connecting"
                 android:textSize="11sp" />
 
+            <!-- Phase 0 of following the video app (docs/plan-mediasession-sync.md): the media sessions readout. -->
+            <Button
+                android:id="@+id/playerSessionsBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:contentDescription="@string/player_sessions"
+                android:text="@string/player_sessions_label" />
+
             <ImageButton
                 android:id="@+id/playerLockBtn"
                 style="@style/SubtitleControl"
@@ -199,5 +208,21 @@
                 android:padding="0dp"
                 android:text="@string/player_larger_label" />
         </LinearLayout>
+
+        <!--
+            The media sessions readout, while turned on (phase 0). A tap
+            opens the notification access setting while that is missing; a
+            long press copies the whole record.
+        -->
+        <TextView
+            android:id="@+id/playerReadout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="monospace"
+            android:maxWidth="320dp"
+            android:textColor="@color/hud_text_secondary"
+            android:textSize="10sp"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

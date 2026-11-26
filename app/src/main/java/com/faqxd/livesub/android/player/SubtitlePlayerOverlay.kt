@@ -44,6 +44,10 @@ import kotlin.math.roundToInt
  * button unlocks. Locked, a double tap anywhere plays or pauses
  * ([onOutsideTouch]).
  *
+ * For now the card's header also has a sessions button, which turns on a
+ * readout of other apps' media sessions at the bottom of the card
+ * ([showReadout]): phase 0 of following the video app.
+ *
  * Main thread only.
  */
 class SubtitlePlayerOverlay(
@@ -76,6 +80,12 @@ class SubtitlePlayerOverlay(
          */
         fun onDoubleTap(sinceMs: Long)
         fun onCloseClicked()
+        /** Turn the media sessions readout on or off (phase 0 of following the video app). */
+        fun onSessionsClicked()
+        /** The readout was tapped: it offers the notification access setting while that is missing. */
+        fun onReadoutClicked()
+        /** The readout was long-pressed: copy its whole record. */
+        fun onReadoutLongPressed()
     }
 
     private val density = context.resources.displayMetrics.density
@@ -103,6 +113,7 @@ class SubtitlePlayerOverlay(
     private val speedBtn: Button = controlsRoot.findViewById(R.id.playerSpeedBtn)
     private val playBtn: ImageButton = controlsRoot.findViewById(R.id.playerPlayBtn)
     private val lockBtn: ImageButton = controlsRoot.findViewById(R.id.playerLockBtn)
+    private val readout: TextView = controlsRoot.findViewById(R.id.playerReadout)
 
     private var expanded = true
     private var playing = false
@@ -182,6 +193,13 @@ class SubtitlePlayerOverlay(
         control(R.id.playerLockBtn) { setLocked(!isLocked) }
         control(R.id.playerMinimizeBtn) { setExpanded(false) }
         control(R.id.playerCloseBtn) { callbacks.onCloseClicked() }
+        control(R.id.playerSessionsBtn) { callbacks.onSessionsClicked() }
+        control(R.id.playerReadout) { callbacks.onReadoutClicked() }
+        readout.setOnLongClickListener {
+            callbacks.onReadoutLongPressed()
+            touched()
+            true
+        }
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (fromUser) callbacks.onSeek(progress * SEEK_STEP_MS)
@@ -293,6 +311,23 @@ class SubtitlePlayerOverlay(
         showNote(context.getString(R.string.player_resumed, clockText(positionMs)), RESUMED_NOTE_MS)
 
     /**
+     * Show [text] as the media sessions readout at the bottom of the card,
+     * or with null hide it. While it shows, the card doesn't fold up by
+     * itself.
+     */
+    fun showReadout(text: CharSequence?) {
+        val wasShown = readout.visibility == View.VISIBLE
+        if (text != null) readout.text = text
+        readout.visibility = if (text != null) View.VISIBLE else View.GONE
+        // The card grows and shrinks with it.
+        if (text != null || wasShown) refit()
+        if ((text != null) != wasShown) touched()
+    }
+
+    /** Fold the controls into the pill, e.g. out of the way of a setting the user is sent to. */
+    fun foldControls() = setExpanded(false)
+
+    /**
      * Lock: touches pass through the subtitle to the app below (the window
      * is dimmed slightly, an Android 12+ requirement, see
      * [OverlayWindow.setClickThrough]) and the controls fold up. Unlock: the
@@ -318,11 +353,8 @@ class SubtitlePlayerOverlay(
             expanded = expand
             card.visibility = if (expand) View.VISIBLE else View.GONE
             pill.visibility = if (expand) View.GONE else View.VISIBLE
-            // The card is bigger than the pill it replaces: keep it on screen once laid out.
-            controlsRoot.doOnPreDraw {
-                controlsWindow.keepOnScreen()
-                controlsWindow.update()
-            }
+            // The card is bigger than the pill it replaces.
+            refit()
             refreshText()
             if (expand) callbacks.onControlsExpanded()
         }
@@ -361,10 +393,20 @@ class SubtitlePlayerOverlay(
         }
     }
 
-    /** The controls were used: restart the countdown to folding them up (playing only). */
+    /** The controls were used: restart the countdown to folding them up (playing, without the readout). */
     private fun touched() {
         controlsRoot.removeCallbacks(autoMinimize)
-        if (expanded && playing) controlsRoot.postDelayed(autoMinimize, AUTO_HIDE_MS)
+        if (expanded && playing && readout.visibility != View.VISIBLE) {
+            controlsRoot.postDelayed(autoMinimize, AUTO_HIDE_MS)
+        }
+    }
+
+    /** The control window changed size: keep it on screen once laid out. */
+    private fun refit() {
+        controlsRoot.doOnPreDraw {
+            controlsWindow.keepOnScreen()
+            controlsWindow.update()
+        }
     }
 
     /** A button of the card: runs [action] and counts as using the controls. */

@@ -115,6 +115,12 @@
     <string name="player_open_failed">Can\'t open the file: %1$s</string>
     <string name="player_stopped_live">Live translation was stopped to play subtitles.</string>
     <string name="live_stopped_player">Subtitle playback was closed for live translation.</string>
+    <!-- Phase 0 of following the video app (docs/plan-mediasession-sync.md) -->
+    <string name="player_sessions">Media sessions readout (test)</string>
+    <string name="player_sessions_label">Sessions</string>
+    <string name="player_sessions_access">To read the video app\'s playback state, turn on notification access for LiveBuddy (no notification is read). Greyed out? Tap it once, then App info → ⋮ → Allow restricted settings.</string>
+    <string name="player_sessions_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
+    <string name="player_sessions_copied">Readout copied</string>
     <string name="player_time" translatable="false">%1$s / %2$s</string>
     <string name="player_back_label" translatable="false">−0.5</string>
     <string name="player_forward_label" translatable="false">+0.5</string>
