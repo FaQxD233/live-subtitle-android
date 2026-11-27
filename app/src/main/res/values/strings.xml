@@ -141,7 +141,10 @@
     <string name="player_reset_desc">Reset the offset to 0</string>
     <string name="player_more">More</string>
     <string name="player_got_it">Got it</string>
-    <string name="player_follow_access">To follow the video app, turn on notification access for LiveBuddy (no notification is read). Greyed out? Tap it once, then App info → ⋮ → Allow restricted settings.</string>
+    <string name="player_access_why">Following the video app needs notification access. It is used only to read where the video app\'s video is; no notification is read.</string>
+    <string name="player_access_restricted">Greyed out? Tap it once, then go to App info → ⋮ (top right) → Allow restricted settings, and come back to turn it on.</string>
+    <string name="player_access_open">Open setting</string>
+    <string name="player_not_now">Not now</string>
     <string name="player_follow_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
     <string name="player_locked_hint_following">Locked: touches pass through. Unlock from the pill.</string>
     <string name="player_sessions">Media sessions readout</string>

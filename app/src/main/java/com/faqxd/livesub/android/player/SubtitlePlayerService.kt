@@ -152,7 +152,7 @@ class SubtitlePlayerService : Service() {
             val running = follower
             when {
                 running == null -> toggleFollowing()
-                !running.refresh() -> openNotificationAccess()
+                !running.refresh() -> explainNotificationAccess()
                 video?.hold == VideoFollower.Hold.OTHER_VIDEO -> running.acceptVideo()
                 running.sessionCount > 1 -> running.cycle()
                 else -> overlay?.showMore()
@@ -169,7 +169,7 @@ class SubtitlePlayerService : Service() {
         override fun onSessionsClicked() = toggleProbe()
 
         override fun onReadoutClicked() {
-            if (!MediaListenerService.isGranted(this@SubtitlePlayerService)) openNotificationAccess()
+            if (!MediaListenerService.isGranted(this@SubtitlePlayerService)) explainNotificationAccess()
         }
 
         override fun onReadoutLongPressed() = copyProbeRecord()
@@ -357,7 +357,7 @@ class SubtitlePlayerService : Service() {
         }
         AppSettings.saveFollowVideo(this, true)
         startFollowing()
-        if (follower?.hasAccess != true) openNotificationAccess()
+        if (follower?.hasAccess != true) explainNotificationAccess()
     }
 
     private fun startFollowing() {
@@ -522,7 +522,7 @@ class SubtitlePlayerService : Service() {
 
     /**
      * Turn the media sessions readout on or off. Turned on without
-     * notification access, it sends the user to that setting first.
+     * notification access, it explains that access first.
      */
     private fun toggleProbe() {
         val running = probe
@@ -534,7 +534,7 @@ class SubtitlePlayerService : Service() {
             return
         }
         probe = MediaSessionProbe(this, handler)
-        if (!MediaListenerService.isGranted(this)) openNotificationAccess()
+        if (!MediaListenerService.isGranted(this)) explainNotificationAccess()
         refreshProbe()
     }
 
@@ -551,10 +551,28 @@ class SubtitlePlayerService : Service() {
         handler.postDelayed(probeTick, PROBE_TICK_MS)
     }
 
+    /**
+     * Say on the card why following needs notification access, and on
+     * Android 13+ how to allow it where it is greyed out (restricted
+     * settings), with a button to the setting (docs/plan-player-sync-ui.md,
+     * 5.2). On the card rather than in an activity, which the floating
+     * windows would cover.
+     */
+    private fun explainNotificationAccess() {
+        val why = getString(R.string.player_access_why)
+        val text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            why + "\n" + getString(R.string.player_access_restricted)
+        } else {
+            why
+        }
+        overlay?.showPanel(
+            text, getString(R.string.player_access_open), { openNotificationAccess() }, getString(R.string.player_not_now),
+        )
+    }
+
     /** Open the notification access setting, with the controls folded out of its way. */
     private fun openNotificationAccess() {
         if (MediaListenerService.openSettings(this)) {
-            Toast.makeText(this, R.string.player_follow_access, Toast.LENGTH_LONG).show()
             overlay?.foldControls()
         } else {
             Toast.makeText(this, R.string.player_follow_no_settings, Toast.LENGTH_LONG).show()

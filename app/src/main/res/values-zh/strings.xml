@@ -140,7 +140,10 @@
     <string name="player_reset_desc">对齐归零</string>
     <string name="player_more">更多</string>
     <string name="player_got_it">知道了</string>
-    <string name="player_follow_access">要跟随视频 App，请为 LiveBuddy 打开「通知使用权」（不会读取通知内容）。开关是灰的：先点一下，再到 应用信息 → ⋮ →「允许受限设置」。</string>
+    <string name="player_access_why">跟随视频 App 需要「通知使用权」：只用来读取视频 App 的播放进度，不会读取任何通知内容。</string>
+    <string name="player_access_restricted">开关是灰色、点不动的话：先点一下它，再到 应用信息 → 右上角 ⋮ →「允许受限设置」，回来再打开。</string>
+    <string name="player_access_open">去开启</string>
+    <string name="player_not_now">取消</string>
     <string name="player_follow_no_settings">打不开通知使用权设置，请在系统设置里搜索「通知使用权」。</string>
     <string name="player_locked_hint_following">已锁定：触摸穿透，展开胶囊可解锁</string>
     <string name="player_sessions">媒体会话读数</string>
