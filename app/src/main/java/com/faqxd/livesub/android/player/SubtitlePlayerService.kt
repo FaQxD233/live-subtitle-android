@@ -32,6 +32,7 @@ import androidx.core.content.ContextCompat
 import com.faqxd.livesub.android.MainActivity
 import com.faqxd.livesub.android.R
 import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.player.SubtitlePlayerOverlay.Tone
 import com.faqxd.livesub.android.service.LiveTranslateService
 import com.faqxd.livesub.android.subtitle.CueTimeline
 import com.faqxd.livesub.android.subtitle.SubtitleClock
@@ -146,13 +147,23 @@ class SubtitlePlayerService : Service() {
 
         override fun onFollowClicked() = toggleFollowing()
 
-        override fun onFollowStatusClicked() {
-            val running = follower ?: return
+        // What following needs now: on, access, the other video, another app; else its switch.
+        override fun onChipClicked() {
+            val running = follower
             when {
+                running == null -> toggleFollowing()
                 !running.refresh() -> openNotificationAccess()
                 video?.hold == VideoFollower.Hold.OTHER_VIDEO -> running.acceptVideo()
-                else -> running.cycle()
+                running.sessionCount > 1 -> running.cycle()
+                else -> overlay?.showMore()
             }
+        }
+
+        override fun onResetOffsetClicked() {
+            if (!tracking || offset == 0L) return
+            overlay?.showShift(-offset)
+            offset = 0L
+            render()
         }
 
         override fun onSessionsClicked() = toggleProbe()
@@ -286,7 +297,7 @@ class SubtitlePlayerService : Service() {
         shown.setSpeed(clock.rate)
         resumeAt?.let { shown.showResumed(it) }
         if (AppSettings.takePlayerHint(this)) {
-            Toast.makeText(this, R.string.player_hint, Toast.LENGTH_LONG).show()
+            shown.showPanel(getString(R.string.player_hint), getString(R.string.player_got_it))
         }
         updateFollowUi()
         render()
@@ -432,22 +443,39 @@ class SubtitlePlayerService : Service() {
         if (wasPlaying != clock.isPlaying) updateNotification()
     }
 
-    /** Show whether and how the subtitles follow the video app. */
+    /**
+     * Show whether and how the subtitles follow the video app: a word or
+     * two on the chip, and on the info line what following needs, if
+     * anything (docs/plan-player-sync-ui.md, 4.2).
+     */
     private fun updateFollowUi() {
         val shown = overlay ?: return
         val running = follower
         val followed = video
-        val status = when {
-            running == null -> getString(R.string.player_follow_off)
-            !running.hasAccess -> getString(R.string.player_follow_no_access)
-            followed == null -> getString(R.string.player_follow_waiting)
-            !followed.positionKnown -> getString(R.string.player_follow_no_position, followed.app)
-            followed.hold == VideoFollower.Hold.AD -> getString(R.string.player_follow_ad, followed.app)
-            followed.hold == VideoFollower.Hold.OTHER_VIDEO -> getString(R.string.player_follow_other_video, followed.app)
-            running.sessionCount > 1 -> getString(R.string.player_follow_switchable, followed.app)
-            else -> getString(R.string.player_follow_on, followed.app)
+        val (chip, tone, detail) = when {
+            running == null -> Triple(getString(R.string.player_chip_off), Tone.BY_HAND, null)
+            !running.hasAccess -> Triple(
+                getString(R.string.player_chip_no_access), Tone.WAITING, getString(R.string.player_detail_no_access),
+            )
+            followed == null -> Triple(
+                getString(R.string.player_chip_waiting), Tone.WAITING, getString(R.string.player_detail_waiting),
+            )
+            !followed.positionKnown -> Triple(
+                getString(R.string.player_chip_no_position, followed.app), Tone.WAITING,
+                getString(R.string.player_detail_no_position, followed.app),
+            )
+            followed.hold == VideoFollower.Hold.AD -> Triple(
+                getString(R.string.player_chip_ad, followed.app), Tone.WAITING,
+                getString(R.string.player_detail_ad, followed.app),
+            )
+            followed.hold == VideoFollower.Hold.OTHER_VIDEO -> Triple(
+                getString(R.string.player_chip_other_video, followed.app), Tone.WAITING,
+                getString(R.string.player_detail_other_video, followed.app),
+            )
+            running.sessionCount > 1 -> Triple(getString(R.string.player_chip_switchable, followed.app), Tone.FOLLOWING, null)
+            else -> Triple(getString(R.string.player_chip_on, followed.app), Tone.FOLLOWING, null)
         }
-        shown.showFollow(running != null, status, tracking, followed?.canPlayPause == true)
+        shown.showFollow(running != null, chip, tone, detail, tracking, followed?.canPlayPause == true)
     }
 
     private fun setSpeed(rate: Double) {
@@ -482,6 +510,7 @@ class SubtitlePlayerService : Service() {
         }
         shown.showCues(timeline.active(position))
         shown.setProgress(position.coerceAtLeast(0L), timeline.durationMs, showsPlaying())
+        shown.showOffset(if (tracking) offset else null)
         if (!clock.isPlaying) return
         // Past the last change a followed video plays on: only the progress needs updates.
         val nextChange = timeline.nextChange(position) ?: if (tracking) null else timeline.durationMs + END_GRACE_MS

@@ -47,7 +47,7 @@
     <string name="overlay_caption_mode_desc">Switch captions: translation, both, or original</string>
     <string name="overlay_click_through">Click-through</string>
     <string name="overlay_click_through_off">Exit click-through</string>
-    <string name="overlay_click_through_hint">Click-through is on: touches now reach the app below. Tap the unlock button or the notification action to exit.</string>
+    <string name="overlay_click_through_hint">Click-through on: touches reach the app below. Tap unlock, or use the notification, to exit.</string>
     <string name="overlay_export">Export captions</string>
 
     <!-- Transcript export -->
@@ -97,7 +97,7 @@
     <string name="player_notif_paused">Paused · %1$s</string>
     <string name="player_unlock">Unlock</string>
     <string name="player_lock">Lock: let touches reach the app below</string>
-    <string name="player_locked_hint">Locked: touches reach the app below. Double-tap anywhere to pause or resume the subtitles. To unlock, tap the small pill and then the unlock button, or use Unlock in the notification.</string>
+    <string name="player_locked_hint">Locked: touches pass through. Double-tap to pause or resume; unlock from the pill.</string>
     <string name="player_placeholder">Subtitles show here · drag up or down</string>
     <string name="player_previous">Previous line</string>
     <string name="player_next">Next line</string>
@@ -109,31 +109,44 @@
     <string name="player_shifted_earlier">Subtitles %1$s s earlier</string>
     <string name="player_speed">Playback speed %1$s (hold for 1×)</string>
     <string name="player_resumed">Continuing at %1$s</string>
-    <string name="player_hint">Tap Play when the video starts. If a line shows late, tap Next line when you hear it; if it shows early, tap Previous line when it is spoken. While playing, the controls fold into a small pill after a few seconds; tap it to bring them back.</string>
+    <string name="player_hint">By hand, tap Play when the video starts. If a line shows late, tap Next line when you hear it; if early, Previous line when it is spoken. Following the video app, play, pause and seeking go with the video, and those buttons set the offset. The controls fold into a small pill after a few seconds; tap it to bring them back.</string>
     <string name="player_no_cues">No subtitles found in this file.</string>
     <string name="player_file_too_large">The file is too large (over %1$d MB).</string>
     <string name="player_open_failed">Can\'t open the file: %1$s</string>
     <string name="player_stopped_live">Live translation was stopped to play subtitles.</string>
     <string name="live_stopped_player">Subtitle playback was closed for live translation.</string>
     <!-- Following the video app (docs/plan-mediasession-sync.md) -->
-    <string name="player_follow">Follow</string>
+    <string name="player_follow">Follow video</string>
     <string name="player_follow_start">Follow the video app</string>
     <string name="player_follow_stop">Stop following the video app</string>
-    <string name="player_follow_off">Aligned by hand</string>
-    <string name="player_follow_no_access">Needs notification access · tap here</string>
-    <string name="player_follow_waiting">Waiting for a video · by hand meanwhile</string>
-    <string name="player_follow_no_position">%1$s gives no position · by hand</string>
-    <string name="player_follow_on">Following %1$s</string>
-    <string name="player_follow_switchable">Following %1$s · tap to switch</string>
-    <string name="player_follow_ad">%1$s shows an ad · subtitles wait</string>
-    <string name="player_follow_other_video">%1$s plays another video · tap to follow it</string>
+    <!-- The status chip, in a word or two; the info line under the buttons says more. -->
+    <string name="player_chip_off">By hand</string>
+    <string name="player_chip_no_access">Needs access</string>
+    <string name="player_chip_waiting">No video</string>
+    <string name="player_chip_no_position">%1$s: no position</string>
+    <string name="player_chip_ad">%1$s: ad</string>
+    <string name="player_chip_other_video">%1$s: new video</string>
+    <string name="player_chip_on">Following %1$s</string>
+    <string name="player_chip_switchable">Following %1$s ⇄</string>
+    <string name="player_detail_off">By hand: late? Tap Next line. Early? Previous line.</string>
+    <string name="player_detail_no_access">Tap the chip to allow notification access and follow the video app</string>
+    <string name="player_detail_waiting">No video playing: align by hand meanwhile</string>
+    <string name="player_detail_no_position">%1$s gives no position: align by hand meanwhile</string>
+    <string name="player_detail_ad">%1$s shows an ad: the subtitles wait</string>
+    <string name="player_detail_other_video">%1$s plays another video: tap the chip to follow it</string>
+    <string name="player_offset_none">Offset: none</string>
+    <string name="player_offset_early">Offset: subtitles %1$s s early</string>
+    <string name="player_offset_late">Offset: subtitles %1$s s late</string>
+    <string name="player_reset">Reset</string>
+    <string name="player_reset_desc">Reset the offset to 0</string>
+    <string name="player_more">More</string>
+    <string name="player_got_it">Got it</string>
     <string name="player_follow_access">To follow the video app, turn on notification access for LiveBuddy (no notification is read). Greyed out? Tap it once, then App info → ⋮ → Allow restricted settings.</string>
     <string name="player_follow_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
-    <string name="player_locked_hint_following">Locked: touches reach the app below, and the subtitles follow the video. To unlock, tap the small pill and then the unlock button, or use Unlock in the notification.</string>
+    <string name="player_locked_hint_following">Locked: touches pass through. Unlock from the pill.</string>
     <string name="player_sessions">Media sessions readout</string>
-    <string name="player_sessions_label">Sessions</string>
+    <string name="player_sessions_label">Diagnostics</string>
     <string name="player_sessions_copied">Readout copied</string>
-    <string name="player_time" translatable="false">%1$s / %2$s</string>
     <string name="player_back_label" translatable="false">−0.5</string>
     <string name="player_forward_label" translatable="false">+0.5</string>
     <string name="player_smaller_label" translatable="false">A−</string>

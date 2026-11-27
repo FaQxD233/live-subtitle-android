@@ -1,6 +1,7 @@
 package com.faqxd.livesub.android.player
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Paint
 import android.os.SystemClock
 import android.text.format.DateUtils
@@ -15,6 +16,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.text.HtmlCompat
 import androidx.core.view.doOnPreDraw
 import com.faqxd.livesub.android.R
@@ -35,20 +37,25 @@ import kotlin.math.roundToInt
  *    two-line subtitle grows upwards), at a height kept for portrait and
  *    landscape apart; it is hidden between subtitles ([showText]). Its row
  *    drags up and down, and a tap brings the controls back;
- *  - the controls, a card in the caption overlay's style (time, lock,
- *    minimize, close; progress and speed; previous / ±0.5 s / play / next,
- *    text size). Minimized, by hand or [AUTO_HIDE_MS] into playback, it
- *    folds into a small pill that a tap expands. It drags anywhere.
+ *  - the controls, a card in the caption overlay's style, of a fixed
+ *    width (docs/plan-player-sync-ui.md, 4.2): a status chip and more,
+ *    lock, minimize, close; progress and speed, the times under it;
+ *    previous / ±0.5 s / play / next; an info line; a panel for longer
+ *    text ([showPanel]); behind more, following on / off, the text size
+ *    and the diagnostics. Minimized, by hand or [AUTO_HIDE_MS] into
+ *    playback, it folds into a small pill that a tap expands. It drags
+ *    anywhere.
  * Locking lets touches pass through the subtitle to the app below (the
  * controls fold up); the pill then shows a lock, and the card's lock
  * button unlocks. Locked, a double tap anywhere plays or pauses
  * ([onOutsideTouch]).
  *
- * Under the header, a follow button turns following the video app on or
- * off, next to a line saying how it goes ([showFollow]); a tap on that
- * line switches between video apps, or follows another video. The
- * header's sessions button turns on a readout of other apps' media
- * sessions at the bottom of the card ([showReadout]), for measuring.
+ * The chip says whether and how the subtitles follow the video app
+ * ([showFollow]); the info line under the buttons shows a brief note
+ * ([showShift], [showResumed]), else what following needs, else the
+ * offset from the video with a reset ([showOffset]). The diagnostics
+ * button turns on a readout of other apps' media sessions at the bottom
+ * of the card ([showReadout]), for measuring.
  *
  * Main thread only.
  */
@@ -84,14 +91,23 @@ class SubtitlePlayerOverlay(
         fun onCloseClicked()
         /** Turn following the video app on or off. */
         fun onFollowClicked()
-        /** The line saying how following goes was tapped. */
-        fun onFollowStatusClicked()
+        /** The status chip was tapped: do what following needs now. */
+        fun onChipClicked()
+        /** Bring the offset from the followed video back to 0. */
+        fun onResetOffsetClicked()
         /** Turn the media sessions readout on or off. */
         fun onSessionsClicked()
         /** The readout was tapped: it offers the notification access setting while that is missing. */
         fun onReadoutClicked()
         /** The readout was long-pressed: copy its whole record. */
         fun onReadoutLongPressed()
+    }
+
+    /** How following goes, by the chip's dot: following a video, waiting, or by hand. */
+    enum class Tone(val colorRes: Int) {
+        FOLLOWING(R.color.status_connected),
+        WAITING(R.color.status_connecting),
+        BY_HAND(R.color.status_idle),
     }
 
     private val density = context.resources.displayMetrics.density
@@ -110,18 +126,26 @@ class SubtitlePlayerOverlay(
     private val controlsRoot: View = View.inflate(context, R.layout.overlay_subtitle_controls, null)
     private val controlsWindow = OverlayWindow(context, controlsRoot, controlsLayoutParams())
     private val pill: View = controlsRoot.findViewById(R.id.playerPill)
+    private val pillFollow: View = controlsRoot.findViewById(R.id.playerPillFollow)
     private val pillState: ImageView = controlsRoot.findViewById(R.id.playerPillState)
     private val pillLock: View = controlsRoot.findViewById(R.id.playerPillLock)
     private val card: View = controlsRoot.findViewById(R.id.playerCard)
-    private val time: TextView = controlsRoot.findViewById(R.id.playerTime)
-    private val noteLabel: TextView = controlsRoot.findViewById(R.id.playerNote)
+    private val chip: TextView = controlsRoot.findViewById(R.id.playerChip)
     private val seekBar: SeekBar = controlsRoot.findViewById(R.id.playerSeek)
+    private val elapsedLabel: TextView = controlsRoot.findViewById(R.id.playerElapsed)
+    private val durationLabel: TextView = controlsRoot.findViewById(R.id.playerDuration)
     private val speedBtn: Button = controlsRoot.findViewById(R.id.playerSpeedBtn)
     private val playBtn: ImageButton = controlsRoot.findViewById(R.id.playerPlayBtn)
     private val lockBtn: ImageButton = controlsRoot.findViewById(R.id.playerLockBtn)
-    private val readout: TextView = controlsRoot.findViewById(R.id.playerReadout)
+    private val infoLabel: TextView = controlsRoot.findViewById(R.id.playerInfo)
+    private val resetBtn: View = controlsRoot.findViewById(R.id.playerResetBtn)
+    private val panel: View = controlsRoot.findViewById(R.id.playerPanel)
+    private val panelText: TextView = controlsRoot.findViewById(R.id.playerPanelText)
+    private val panelPrimary: Button = controlsRoot.findViewById(R.id.playerPanelPrimary)
+    private val panelSecondary: Button = controlsRoot.findViewById(R.id.playerPanelSecondary)
+    private val moreRow: View = controlsRoot.findViewById(R.id.playerMoreRow)
     private val followBtn: Button = controlsRoot.findViewById(R.id.playerFollowBtn)
-    private val followStatus: TextView = controlsRoot.findViewById(R.id.playerFollowStatus)
+    private val readout: TextView = controlsRoot.findViewById(R.id.playerReadout)
 
     private var expanded = true
     private var playing = false
@@ -137,7 +161,17 @@ class SubtitlePlayerOverlay(
         revealPending = false
         if (shownKey.isNotEmpty()) textRoot.visibility = View.VISIBLE
     }
-    private val hideNote = Runnable { noteLabel.text = "" }
+    // The info line shows the first there is of: a brief note, what following
+    // needs, the offset (or by hand, how to align).
+    private var note: CharSequence? = null
+    private var followDetail: CharSequence? = null
+    private var offsetText: CharSequence = ""
+    // The offset shown, null while not following; nothing shown yet at first.
+    private var shownOffset: Long? = Long.MIN_VALUE
+    private val hideNote = Runnable {
+        note = null
+        refreshInfo()
+    }
     private val autoMinimize = Runnable { setExpanded(false) }
 
     // Locked, double taps anywhere play or pause (see onOutsideTouch).
@@ -202,7 +236,9 @@ class SubtitlePlayerOverlay(
         control(R.id.playerMinimizeBtn) { setExpanded(false) }
         control(R.id.playerCloseBtn) { callbacks.onCloseClicked() }
         control(R.id.playerFollowBtn) { callbacks.onFollowClicked() }
-        control(R.id.playerFollowStatus) { callbacks.onFollowStatusClicked() }
+        control(R.id.playerChip) { callbacks.onChipClicked() }
+        control(R.id.playerMoreBtn) { showMore(moreRow.visibility != View.VISIBLE) }
+        control(R.id.playerResetBtn) { callbacks.onResetOffsetClicked() }
         control(R.id.playerSessionsBtn) { callbacks.onSessionsClicked() }
         control(R.id.playerReadout) { callbacks.onReadoutClicked() }
         readout.setOnLongClickListener {
@@ -229,6 +265,7 @@ class SubtitlePlayerOverlay(
         outline.paint.style = Paint.Style.STROKE
         outline.paint.strokeJoin = Paint.Join.ROUND
         setSpeed(1.0)
+        setCardWidth()
         applyStyle()
         refreshText()
     }
@@ -247,7 +284,7 @@ class SubtitlePlayerOverlay(
     fun detach() {
         controlsRoot.removeCallbacks(autoMinimize)
         controlsRoot.removeCallbacks(confirmDoubleTap)
-        noteLabel.removeCallbacks(hideNote)
+        infoLabel.removeCallbacks(hideNote)
         textRoot.removeCallbacks(reveal)
         textWindow.detach()
         controlsWindow.detach()
@@ -255,9 +292,10 @@ class SubtitlePlayerOverlay(
 
     /**
      * The screen size changed: keep both windows on screen (the subtitle
-     * rewraps by itself), and after a rotation put the subtitle at the
-     * height kept for the new orientation, since a portrait video usually
-     * sits high on the screen and a landscape one fills it.
+     * rewraps by itself, the card narrows on a narrow screen), and after a
+     * rotation put the subtitle at the height kept for the new
+     * orientation, since a portrait video usually sits high on the screen
+     * and a landscape one fills it.
      */
     fun onScreenChanged() {
         val landscape = isLandscape()
@@ -265,6 +303,7 @@ class SubtitlePlayerOverlay(
             textLandscape = landscape
             textWindow.params.y = subtitleBottom(landscape)
         }
+        setCardWidth()
         textWindow.onScreenChanged()
         controlsWindow.onScreenChanged()
     }
@@ -288,7 +327,8 @@ class SubtitlePlayerOverlay(
     }
 
     fun setProgress(positionMs: Long, durationMs: Long, playing: Boolean) {
-        time.text = context.getString(R.string.player_time, clockText(positionMs), clockText(durationMs))
+        elapsedLabel.text = clockText(positionMs)
+        durationLabel.text = clockText(durationMs)
         if (!seeking) {
             seekBar.max = (durationMs / SEEK_STEP_MS).toInt().coerceAtLeast(1)
             seekBar.progress = (positionMs / SEEK_STEP_MS).toInt()
@@ -305,15 +345,69 @@ class SubtitlePlayerOverlay(
 
     /** Briefly name a shift of the subtitles by [deltaMs] of playback position. */
     fun showShift(deltaMs: Long) {
-        val seconds = String.format(Locale.US, "%.1f", abs(deltaMs) / 1000.0)
         // Moving the position back makes the subtitles come later.
         showNote(
             context.getString(
                 if (deltaMs < 0) R.string.player_shifted_later else R.string.player_shifted_earlier,
-                seconds,
+                secondsText(deltaMs),
             ),
             SHIFT_NOTE_MS,
         )
+    }
+
+    /**
+     * Show on the info line how far the subtitles run ahead of the
+     * followed video ([offsetMs], + earlier), with reset beside it unless
+     * 0; null while they follow none, which shows how to align by hand.
+     */
+    fun showOffset(offsetMs: Long?) {
+        if (offsetMs == shownOffset) return
+        shownOffset = offsetMs
+        offsetText = when {
+            offsetMs == null -> context.getString(R.string.player_detail_off)
+            offsetMs == 0L -> context.getString(R.string.player_offset_none)
+            offsetMs > 0 -> context.getString(R.string.player_offset_early, secondsText(offsetMs))
+            else -> context.getString(R.string.player_offset_late, secondsText(offsetMs))
+        }
+        resetBtn.visibility = if (offsetMs != null && offsetMs != 0L) View.VISIBLE else View.GONE
+        refreshInfo()
+    }
+
+    /**
+     * Show [text] in the panel under the info line, [primary] on its main
+     * button and [secondary], if given, beside it; either button hides the
+     * panel, then runs its action. The card comes out for it and doesn't
+     * fold up by itself meanwhile.
+     */
+    fun showPanel(
+        text: CharSequence,
+        primary: CharSequence,
+        onPrimary: () -> Unit = {},
+        secondary: CharSequence? = null,
+        onSecondary: () -> Unit = {},
+    ) {
+        panelText.text = text
+        panelPrimary.text = primary
+        panelPrimary.setOnClickListener {
+            hidePanel()
+            onPrimary()
+        }
+        panelSecondary.visibility = if (secondary != null) View.VISIBLE else View.GONE
+        panelSecondary.text = secondary
+        panelSecondary.setOnClickListener {
+            hidePanel()
+            onSecondary()
+        }
+        panel.visibility = View.VISIBLE
+        refit()
+        setExpanded(true)
+    }
+
+    /** Show the row behind more (following on / off, text size, diagnostics), or with false hide it. */
+    fun showMore(show: Boolean = true) {
+        moreRow.visibility = if (show) View.VISIBLE else View.GONE
+        refit()
+        touched()
     }
 
     /** Briefly say that playback continues at [positionMs], where it stopped last time. */
@@ -338,15 +432,28 @@ class SubtitlePlayerOverlay(
     fun foldControls() = setExpanded(false)
 
     /**
-     * Show whether the subtitles follow the video app ([on]) and how
-     * ([status]). While they follow a video ([followsVideo]), the speed is
-     * the video's, so its button is off, and play / pause works only where
-     * the video app takes it ([canPlayPause]).
+     * Show whether following the video app is on ([on]) and how it goes:
+     * [chipText] and [tone] on the chip, and on the info line [detail],
+     * what following needs, if anything. While the subtitles follow a
+     * video ([followsVideo]), the pill has a dot, the speed is the
+     * video's, so its button is off, and play / pause works only where the
+     * video app takes it ([canPlayPause]).
      */
-    fun showFollow(on: Boolean, status: CharSequence, followsVideo: Boolean, canPlayPause: Boolean) {
+    fun showFollow(
+        on: Boolean,
+        chipText: CharSequence,
+        tone: Tone,
+        detail: CharSequence?,
+        followsVideo: Boolean,
+        canPlayPause: Boolean,
+    ) {
         followBtn.setBackgroundResource(if (on) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary)
         followBtn.contentDescription = context.getString(if (on) R.string.player_follow_stop else R.string.player_follow_start)
-        followStatus.text = status
+        chip.text = chipText
+        chip.compoundDrawableTintList = ColorStateList.valueOf(ContextCompat.getColor(context, tone.colorRes))
+        pillFollow.visibility = if (followsVideo) View.VISIBLE else View.GONE
+        followDetail = detail
+        refreshInfo()
         setUsable(speedBtn, !followsVideo)
         setUsable(playBtn, !followsVideo || canPlayPause)
     }
@@ -388,7 +495,7 @@ class SubtitlePlayerOverlay(
     private fun setPlaying(playing: Boolean) {
         if (playing == this.playing) return
         this.playing = playing
-        val icon = if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val icon = if (playing) R.drawable.ic_player_pause else R.drawable.ic_player_play
         playBtn.setImageResource(icon)
         playBtn.contentDescription = context.getString(if (playing) R.string.pause else R.string.player_play)
         pillState.setImageResource(icon)
@@ -417,10 +524,10 @@ class SubtitlePlayerOverlay(
         }
     }
 
-    /** The controls were used: restart the countdown to folding them up (playing, without the readout). */
+    /** The controls were used: restart the countdown to folding them up (playing, with nothing to read). */
     private fun touched() {
         controlsRoot.removeCallbacks(autoMinimize)
-        if (expanded && playing && readout.visibility != View.VISIBLE) {
+        if (expanded && playing && readout.visibility != View.VISIBLE && panel.visibility != View.VISIBLE) {
             controlsRoot.postDelayed(autoMinimize, AUTO_HIDE_MS)
         }
     }
@@ -447,11 +554,30 @@ class SubtitlePlayerOverlay(
         }
     }
 
-    /** Show [text] in the card's header for [durationMs]. */
+    /** Show [text] on the info line for [durationMs]. */
     private fun showNote(text: CharSequence, durationMs: Long) {
-        noteLabel.text = text
-        noteLabel.removeCallbacks(hideNote)
-        noteLabel.postDelayed(hideNote, durationMs)
+        note = text
+        refreshInfo()
+        infoLabel.removeCallbacks(hideNote)
+        infoLabel.postDelayed(hideNote, durationMs)
+    }
+
+    private fun refreshInfo() {
+        infoLabel.text = note ?: followDetail ?: offsetText
+    }
+
+    private fun hidePanel() {
+        panel.visibility = View.GONE
+        refit()
+        touched()
+    }
+
+    /** The card's width: [CARD_WIDTH_DP], or less on a narrower screen. */
+    private fun setCardWidth() {
+        val screen = context.resources.displayMetrics.widthPixels
+        val margins = 2 * (sideMarginPx + (CARD_MARGIN_DP * density).toInt())
+        val cardWidth = minOf((CARD_WIDTH_DP * density).toInt(), screen - margins)
+        card.layoutParams = card.layoutParams.apply { width = cardWidth }
     }
 
     /**
@@ -583,9 +709,17 @@ class SubtitlePlayerOverlay(
 
     private fun clockText(ms: Long): String = DateUtils.formatElapsedTime(ms / 1000)
 
+    /** [ms] as seconds, without sign or trailing zeros: e.g. "0.5", "1.37", "2". */
+    private fun secondsText(ms: Long): String =
+        String.format(Locale.US, "%.2f", abs(ms) / 1000.0).trimEnd('0').trimEnd('.')
+
     private companion object {
         /** The controls' distance from the left edge until they are dragged. */
         const val SIDE_MARGIN_DP = 16
+        /** The card's width, on a screen wide enough. */
+        const val CARD_WIDTH_DP = 300
+        /** The card's margin in its window (room for the shadow). */
+        const val CARD_MARGIN_DP = 6
         /** Where the subtitle's bottom edge starts, as a fraction of the screen height from the bottom. */
         const val DEFAULT_BOTTOM_FRACTION = 0.12f
         /** Where the controls start, as a fraction of the screen height from the top. */

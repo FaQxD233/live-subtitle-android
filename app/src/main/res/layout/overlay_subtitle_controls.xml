@@ -2,9 +2,11 @@
 <!--
     The subtitle player's control window, apart from the subtitle so the
     two never push each other around. Expanded it is a card in the caption
-    overlay's style; minimized (by hand, by locking, or a few seconds into
-    playback) it folds into a small pill that expands it again on a tap.
-    Both drag the window; the margins leave room for the elevation shadows.
+    overlay's style, 300dp wide (narrower on a narrower screen, set in
+    code); minimized (by hand, by locking, or a few seconds into playback)
+    it folds into a small pill that expands it again on a tap. Both drag
+    the window; the margins leave room for the elevation shadows. See
+    docs/plan-player-sync-ui.md, 4.2.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
@@ -25,13 +27,24 @@
         android:paddingEnd="8dp"
         android:visibility="gone">
 
+        <!-- Shown while the subtitles follow a video. -->
+        <ImageView
+            android:id="@+id/playerPillFollow"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="6dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/status_dot"
+            android:tint="@color/status_connected"
+            android:visibility="gone" />
+
         <!-- Playing or paused. -->
         <ImageView
             android:id="@+id/playerPillState"
             android:layout_width="16dp"
             android:layout_height="16dp"
             android:importantForAccessibility="no"
-            android:src="@android:drawable/ic_media_play"
+            android:src="@drawable/ic_player_play"
             android:tint="@color/hud_text_primary" />
 
         <!-- Shown while the subtitle is locked (touches pass through). -->
@@ -56,7 +69,7 @@
 
     <LinearLayout
         android:id="@+id/playerCard"
-        android:layout_width="wrap_content"
+        android:layout_width="300dp"
         android:layout_height="wrap_content"
         android:layout_margin="6dp"
         android:background="@drawable/overlay_card_bg"
@@ -65,41 +78,48 @@
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp">
 
-        <!-- Header: time, a brief note, lock, minimize, close -->
+        <!-- Header: the status chip, then more, lock, minimize, close -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/playerTime"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFeatureSettings="tnum"
-                android:textColor="@color/hud_text_secondary"
-                android:textSize="12sp" />
-
-            <!-- Briefly names the last shift ("Subtitles 0.5 s later") or where playback resumed. -->
-            <TextView
-                android:id="@+id/playerNote"
+            <!-- Leaves the chip its own width, at most what the buttons leave. -->
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:textColor="@color/status_connecting"
-                android:textSize="11sp" />
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1">
 
-            <!-- The media sessions readout, for measuring (docs/plan-mediasession-sync.md). -->
-            <Button
-                android:id="@+id/playerSessionsBtn"
+                <!--
+                    Whether and how the subtitles follow the video app, in a
+                    word or two; the info line says more. A tap does what is
+                    needed now (see the service).
+                -->
+                <TextView
+                    android:id="@+id/playerChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:background="@drawable/overlay_btn_secondary"
+                    android:drawableStart="@drawable/status_dot"
+                    android:drawablePadding="6dp"
+                    android:ellipsize="end"
+                    android:gravity="center_vertical"
+                    android:maxLines="1"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="10dp"
+                    android:textColor="@color/hud_text_primary"
+                    android:textSize="12sp" />
+            </FrameLayout>
+
+            <ImageButton
+                android:id="@+id/playerMoreBtn"
                 style="@style/SubtitleControl"
-                android:layout_width="wrap_content"
+                android:layout_width="30dp"
                 android:layout_height="30dp"
-                android:contentDescription="@string/player_sessions"
-                android:text="@string/player_sessions_label" />
+                android:contentDescription="@string/player_more"
+                android:src="@drawable/ic_more_vert" />
 
             <ImageButton
                 android:id="@+id/playerLockBtn"
@@ -124,46 +144,14 @@
                 android:layout_height="30dp"
                 android:layout_marginEnd="0dp"
                 android:contentDescription="@string/overlay_close"
-                android:src="@android:drawable/ic_menu_close_clear_cancel" />
-        </LinearLayout>
-
-        <!--
-            Following the video app: on / off, and a line saying how it goes;
-            a tap on that line switches between video apps, or follows
-            another video (docs/plan-mediasession-sync.md).
-        -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/playerFollowBtn"
-                style="@style/SubtitleControl"
-                android:layout_width="wrap_content"
-                android:layout_height="30dp"
-                android:contentDescription="@string/player_follow_start"
-                android:text="@string/player_follow" />
-
-            <TextView
-                android:id="@+id/playerFollowStatus"
-                android:layout_width="0dp"
-                android:layout_height="30dp"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:gravity="center_vertical"
-                android:maxLines="1"
-                android:textColor="@color/hud_text_secondary"
-                android:textSize="12sp" />
+                android:src="@drawable/ic_overlay_close" />
         </LinearLayout>
 
         <!-- Progress, and the playback speed next to it -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -184,9 +172,37 @@
                 android:padding="0dp" />
         </LinearLayout>
 
+        <!-- The times, under the ends of the progress bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="44dp"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp">
+
+            <TextView
+                android:id="@+id/playerElapsed"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:fontFeatureSettings="tnum"
+                android:textColor="@color/hud_text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/playerDuration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum"
+                android:textColor="@color/hud_text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Previous line, −0.5 s, play, +0.5 s, next line -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:layout_marginTop="4dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
@@ -195,7 +211,7 @@
                 android:id="@+id/playerPrevBtn"
                 style="@style/SubtitleControl"
                 android:contentDescription="@string/player_previous"
-                android:src="@android:drawable/ic_media_previous" />
+                android:src="@drawable/ic_player_previous" />
 
             <Button
                 android:id="@+id/playerBackBtn"
@@ -207,9 +223,11 @@
             <ImageButton
                 android:id="@+id/playerPlayBtn"
                 style="@style/SubtitleControl"
+                android:layout_width="56dp"
+                android:layout_height="36dp"
                 android:background="@drawable/overlay_btn_primary"
                 android:contentDescription="@string/player_play"
-                android:src="@android:drawable/ic_media_play" />
+                android:src="@drawable/ic_player_play" />
 
             <Button
                 android:id="@+id/playerForwardBtn"
@@ -221,9 +239,115 @@
             <ImageButton
                 android:id="@+id/playerNextBtn"
                 style="@style/SubtitleControl"
-                android:layout_marginEnd="12dp"
+                android:layout_marginEnd="0dp"
                 android:contentDescription="@string/player_next"
-                android:src="@android:drawable/ic_media_next" />
+                android:src="@drawable/ic_player_next" />
+        </LinearLayout>
+
+        <!--
+            The info line, always one line high so the card keeps its
+            height: a brief note, or how following goes, or the offset from
+            the video, with reset beside an offset.
+        -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/playerInfo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/hud_text_secondary"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/playerResetBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="0dp"
+                android:contentDescription="@string/player_reset_desc"
+                android:padding="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/player_reset"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Something to read at more length, with its buttons. -->
+        <LinearLayout
+            android:id="@+id/playerPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/playerPanelText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/hud_text_primary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/playerPanelSecondary"
+                    style="@style/SubtitleControl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:padding="0dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/playerPanelPrimary"
+                    style="@style/SubtitleControl"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="0dp"
+                    android:background="@drawable/overlay_btn_primary"
+                    android:padding="0dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Behind ⋮: following on / off, the text size, the diagnostics readout -->
+        <LinearLayout
+            android:id="@+id/playerMoreRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/playerFollowBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:contentDescription="@string/player_follow_start"
+                android:padding="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/player_follow" />
 
             <Button
                 android:id="@+id/playerSmallerBtn"
@@ -235,10 +359,27 @@
             <Button
                 android:id="@+id/playerLargerBtn"
                 style="@style/SubtitleControl"
-                android:layout_marginEnd="0dp"
                 android:contentDescription="@string/player_larger"
                 android:padding="0dp"
                 android:text="@string/player_larger_label" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <!-- The media sessions readout, for measuring (docs/plan-mediasession-sync.md). -->
+            <Button
+                android:id="@+id/playerSessionsBtn"
+                style="@style/SubtitleControl"
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:layout_marginEnd="0dp"
+                android:contentDescription="@string/player_sessions"
+                android:padding="0dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/player_sessions_label" />
         </LinearLayout>
 
         <!--
@@ -252,7 +393,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:fontFamily="monospace"
-            android:maxWidth="320dp"
             android:textColor="@color/hud_text_secondary"
             android:textSize="10sp"
             android:visibility="gone" />
