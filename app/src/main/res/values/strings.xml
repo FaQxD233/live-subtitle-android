@@ -137,6 +137,7 @@
     <string name="player_offset_none">Offset: none</string>
     <string name="player_offset_early">Offset: subtitles %1$s s early</string>
     <string name="player_offset_late">Offset: subtitles %1$s s late</string>
+    <string name="player_offset_kept">Offset from last time applied</string>
     <string name="player_reset">Reset</string>
     <string name="player_reset_desc">Reset the offset to 0</string>
     <string name="player_more">More</string>

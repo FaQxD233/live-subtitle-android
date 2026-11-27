@@ -414,6 +414,9 @@ class SubtitlePlayerOverlay(
     fun showResumed(positionMs: Long) =
         showNote(context.getString(R.string.player_resumed, clockText(positionMs)), RESUMED_NOTE_MS)
 
+    /** Briefly say that the offset from the video is the one these subtitles had last time. */
+    fun showOffsetKept() = showNote(context.getString(R.string.player_offset_kept), RESUMED_NOTE_MS)
+
     /**
      * Show [text] as the media sessions readout at the bottom of the card,
      * or with null hide it. While it shows, the card doesn't fold up by

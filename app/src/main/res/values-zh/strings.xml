@@ -136,6 +136,7 @@
     <string name="player_offset_none">对齐：未调</string>
     <string name="player_offset_early">对齐：字幕提前 %1$s 秒</string>
     <string name="player_offset_late">对齐：字幕推后 %1$s 秒</string>
+    <string name="player_offset_kept">已套用上次的对齐</string>
     <string name="player_reset">归零</string>
     <string name="player_reset_desc">对齐归零</string>
     <string name="player_more">更多</string>

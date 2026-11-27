@@ -84,6 +84,8 @@ class SubtitlePlayerService : Service() {
     private var video: VideoFollower.Video? = null
     private var tracking = false
     private var offset = 0L
+    // The offset came from last time: say so once it applies.
+    private var offsetKeptToShow = false
     // A drag's wait is over: the subtitles play on with the video.
     private val dragResync = Runnable {
         video?.takeIf { tracking && it.positionKnown }?.let { syncToVideo(it, force = true) }
@@ -250,7 +252,8 @@ class SubtitlePlayerService : Service() {
      * Play what [SubtitlePlayback] holds: following the video app when the
      * user left that on and access is there, from the video's position;
      * else paused until the user taps play, from where it stopped last
-     * time, or from the start.
+     * time, or from the start. The offset from the video it had last time
+     * comes back either way.
      */
     private fun start() {
         // A subtitle playing until now is replaced: remember where it was.
@@ -258,8 +261,11 @@ class SubtitlePlayerService : Service() {
         title = SubtitlePlayback.title
         key = SubtitlePlayback.key
         timeline = CueTimeline(SubtitlePlayback.cues)
-        // The offset to a video is kept for one playback only (plan, phase 1).
-        offset = 0L
+        // Where it stopped last time, and its offset from the video, which
+        // comes back with it (docs/plan-player-sync-ui.md, 5.3).
+        val kept = SubtitlePositions.get(this, key)
+        offset = kept?.offsetMs ?: 0L
+        offsetKeptToShow = offset != 0L
         // Before live translation stops: its run is kept as it ends, and
         // dropping old runs then spares the one shown here (playingRecord).
         running = true
@@ -275,7 +281,7 @@ class SubtitlePlayerService : Service() {
             follower?.forgetVideos()
         }
         // Following a video, the clock keeps its position.
-        val resumeAt = if (tracking) null else SubtitlePositions.get(this, key)?.takeIf { it < timeline.durationMs }
+        val resumeAt = if (tracking) null else kept?.positionMs?.takeIf { it < timeline.durationMs }
         if (!tracking) {
             clock.pause()
             clock.seekTo(resumeAt ?: 0L)
@@ -296,12 +302,21 @@ class SubtitlePlayerService : Service() {
         shown.showNewSubtitles()
         shown.setSpeed(clock.rate)
         resumeAt?.let { shown.showResumed(it) }
+        showOffsetKept()
         if (AppSettings.takePlayerHint(this)) {
             shown.showPanel(getString(R.string.player_hint), getString(R.string.player_got_it))
         }
         updateFollowUi()
         render()
         updateNotification()
+    }
+
+    /** Once the subtitles follow a video, say that their offset from last time applies, if there is one. */
+    private fun showOffsetKept() {
+        val shown = overlay ?: return
+        if (!tracking || !offsetKeptToShow) return
+        offsetKeptToShow = false
+        shown.showOffsetKept()
     }
 
     /**
@@ -391,6 +406,7 @@ class SubtitlePlayerService : Service() {
         tracking = true
         clock.seekTo(position - offset)
         syncToVideo(followed, force = true)
+        showOffsetKept()
         // Play / pause now works the video.
         updateNotification()
     }
@@ -484,12 +500,15 @@ class SubtitlePlayerService : Service() {
         render()
     }
 
-    /** Remember where playback of the subtitle is, unless it played to the end or had barely begun. */
+    /**
+     * Remember where playback of the subtitle is, unless it played to the
+     * end or had barely begun, and its offset from the video.
+     */
     private fun savePosition() {
         if (key.isEmpty()) return
         val position = subtitlePosition()
         val worthKeeping = position >= RESUME_MIN_MS && position < timeline.durationMs
-        SubtitlePositions.put(this, key, if (worthKeeping) position else null)
+        SubtitlePositions.put(this, key, if (worthKeeping) position else null, offset)
     }
 
     /**
