@@ -83,6 +83,10 @@ class SubtitlePlayerService : Service() {
     private var video: VideoFollower.Video? = null
     private var tracking = false
     private var offset = 0L
+    // A drag's wait is over: the subtitles play on with the video.
+    private val dragResync = Runnable {
+        video?.takeIf { tracking && it.positionKnown }?.let { syncToVideo(it, force = true) }
+    }
 
     // The text size and background opacity apply while playing. The
     // framework holds the listener only weakly, so keep a field reference.
@@ -219,6 +223,7 @@ class SubtitlePlayerService : Service() {
         AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
         unregisterReceiver(screenOffReceiver)
         handler.removeCallbacks(tick)
+        handler.removeCallbacks(dragResync)
         probe?.stop()
         probe = null
         handler.removeCallbacks(probeTick)
@@ -345,7 +350,7 @@ class SubtitlePlayerService : Service() {
     }
 
     private fun startFollowing() {
-        val created = VideoFollower(this, handler) { onVideoChanged() }
+        val created = VideoFollower(this, handler, onNote = { probe?.note(it) }, onChange = { onVideoChanged() })
         // Before it reports anything: the report reads it.
         follower = created
         created.refresh()
@@ -383,6 +388,7 @@ class SubtitlePlayerService : Service() {
     private fun stopTracking() {
         val position = subtitlePosition().coerceIn(0L, timeline.durationMs)
         tracking = false
+        handler.removeCallbacks(dragResync)
         clock.pause()
         clock.seekTo(position)
         render()
@@ -393,18 +399,23 @@ class SubtitlePlayerService : Service() {
      * Move the clock with [followed]: to its position, speed and playing
      * or not, unless it is that close already ([SYNC_TOLERANCE_MS], or
      * [force]); through an ad or another video, let the subtitles wait
-     * where they are.
+     * where they are. After a drag they wait at the new position while
+     * the video loads ([VideoFollower.Video.waitsUntil]), then play on.
      */
     private fun syncToVideo(followed: VideoFollower.Video, force: Boolean) {
+        handler.removeCallbacks(dragResync)
         val wasPlaying = clock.isPlaying
         if (followed.hold != null) {
             clock.pause()
         } else {
-            val position = followed.positionAt(SystemClock.elapsedRealtime())
+            val now = SystemClock.elapsedRealtime()
+            val position = followed.positionAt(now)
             val speed = followed.speed.toDouble()
+            val waitsUntil = followed.waitsUntil(now)
+            val playing = followed.playing && waitsUntil == null
             if (force || VideoTime.needsSync(
                     clock.isPlaying, clock.rate, clock.position(),
-                    followed.playing, speed, position, SYNC_TOLERANCE_MS,
+                    playing, speed, position, SYNC_TOLERANCE_MS,
                 )
             ) {
                 // Paused or rewinding, a video may report 0 or less, which the clock can't take.
@@ -413,8 +424,9 @@ class SubtitlePlayerService : Service() {
                     overlay?.setSpeed(speed)
                 }
                 clock.seekTo(position)
-                if (followed.playing) clock.play() else clock.pause()
+                if (playing) clock.play() else clock.pause()
             }
+            if (waitsUntil != null) handler.postDelayed(dragResync, waitsUntil - now)
         }
         render()
         if (wasPlaying != clock.isPlaying) updateNotification()

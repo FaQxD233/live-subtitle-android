@@ -8,6 +8,8 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
+import com.faqxd.livesub.android.data.AppSettings
+import com.faqxd.livesub.android.subtitle.DragSamples
 import com.faqxd.livesub.android.subtitle.VideoTime
 import java.util.Locale
 import kotlin.math.abs
@@ -68,6 +70,9 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
     /** Stop watching, for good. */
     fun stop() = watcher.stop()
 
+    /** Log [text]: what following the video made of a report, such as a drag's wait. */
+    fun note(text: String) = log(text)
+
     /** A few lines for the controls: access, the listener, each session now with its numbers so far. */
     fun readout(): String = buildString {
         val now = SystemClock.elapsedRealtime()
@@ -83,6 +88,7 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
             append("\n   ").append(metaText(record.metadata))
             append("\n   ").append(record.reports).append(" reports, drift ").append(record.drifts)
             append(", jumps ").append(record.jumps)
+            dragText(record.name)?.let { append("\n   ").append(it) }
         }
         append(if (granted) "\nlong-press to copy" else "\ntap to grant access, long-press to copy")
     }
@@ -105,6 +111,7 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
             appendLine("${i + 1}. ${record.name} (label $label): ${stateText(record.state, now)}")
             appendLine("   ${metaText(record.metadata)}")
             appendLine("   ${record.summary()}")
+            dragText(record.name)?.let { appendLine("   $it") }
         }
         appendLine("events, last $MAX_EVENTS (steady reports only counted):")
         events.forEach { appendLine(it) }
@@ -125,7 +132,7 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
         if (age != null) record.ages.add(age)
         val drift = drift(previous, state)
         if (drift != null) {
-            if (abs(drift) < JUMP_MS) record.drifts.add(drift) else record.jumps++
+            if (abs(drift) < VideoTime.JUMP_MS) record.drifts.add(drift) else record.jumps++
         }
         val changed = previous == null || previous.state != state.state ||
             previous.playbackSpeed != state.playbackSpeed
@@ -141,14 +148,18 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
      * playing or a position or time is unknown.
      */
     private fun drift(previous: PlaybackState?, state: PlaybackState): Long? {
-        if (previous == null || !playing(previous)) return null
-        if (previous.position < 0 || state.position < 0) return null
-        if (previous.lastPositionUpdateTime <= 0 || state.lastPositionUpdateTime <= 0) return null
-        val predicted = VideoTime.positionAt(
-            previous.position, previous.lastPositionUpdateTime, previous.playbackSpeed,
-            playing = true, now = state.lastPositionUpdateTime,
+        if (previous == null) return null
+        return VideoTime.drift(
+            previous.position, previous.lastPositionUpdateTime, previous.playbackSpeed, playing(previous),
+            state.position, state.lastPositionUpdateTime,
         )
-        return state.position - predicted
+    }
+
+    /** The wait after a drag [app]'s samples make, and the samples; null before the first. */
+    private fun dragText(app: String): String? {
+        val samples = DragSamples.decode(AppSettings.dragSamples(context, app))
+        if (samples.list.isEmpty()) return null
+        return "drag wait ${samples.waitMs()} ms, samples $samples"
     }
 
     private fun playing(state: PlaybackState): Boolean = VideoTime.isPlaying(state.state, state.playbackSpeed)
@@ -230,7 +241,7 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
         val ages = Stat()
         /** Where a report lands against where the playing one before it put the video (+ ahead). */
         val drifts = Stat()
-        /** Reports [JUMP_MS] or more off that: seeks and restarts rather than drift. */
+        /** Reports [VideoTime.JUMP_MS] or more off that: seeks and restarts rather than drift. */
         var jumps = 0
 
         fun summary(): String = "$reports reports, gap $gaps, age $ages, drift $drifts, jumps $jumps"
@@ -258,8 +269,6 @@ class MediaSessionProbe(private val context: Context, handler: Handler) {
         const val MAX_EVENTS = 100
         /** A report landing this far from the predicted position is logged: the sync tolerance (plan, 4.1). */
         const val NOTABLE_DRIFT_MS = 300L
-        /** A report this far off is a seek or a restart, not drift. */
-        const val JUMP_MS = 3_000L
         const val TITLE_CHARS = 24
         const val REFUSED = "session list refused (SecurityException)"
         val ACTIONS = listOf(

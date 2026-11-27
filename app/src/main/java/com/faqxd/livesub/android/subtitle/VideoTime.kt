@@ -35,6 +35,28 @@ object VideoTime {
     }
 
     /**
+     * How far a report of [positionMs] as of [updateTimeMs] lands from
+     * where an earlier one put the video at that time (+ ahead): the
+     * earlier one at [previousPositionMs] as of [previousUpdateTimeMs],
+     * playing at [previousSpeed]. Null when the earlier one wasn't playing
+     * ([previousPlaying]) or a position or time is unknown. [JUMP_MS] or
+     * more is a seek or a restart rather than drift.
+     */
+    fun drift(
+        previousPositionMs: Long,
+        previousUpdateTimeMs: Long,
+        previousSpeed: Float,
+        previousPlaying: Boolean,
+        positionMs: Long,
+        updateTimeMs: Long,
+    ): Long? {
+        if (!previousPlaying || previousPositionMs < 0 || positionMs < 0) return null
+        if (previousUpdateTimeMs <= 0 || updateTimeMs <= 0) return null
+        val predicted = positionAt(previousPositionMs, previousUpdateTimeMs, previousSpeed, playing = true, now = updateTimeMs)
+        return positionMs - predicted
+    }
+
+    /**
      * Whether a clock following a video must be moved to match it: one
      * plays while the other holds still, it runs at another speed than the
      * playing video, or it is [toleranceMs] or more off. A smaller gap is
@@ -53,6 +75,9 @@ object VideoTime {
         clockPlaying != videoPlaying ||
             (videoPlaying && abs(clockRate - videoSpeed) > SPEED_EPSILON) ||
             abs(clockPositionMs - videoPositionMs) >= toleranceMs
+
+    /** A report this far off where the one before put the video is a seek or a restart, not drift. */
+    const val JUMP_MS = 3_000L
 
     /** Speeds closer than this are the same (a Float speed read as Double). */
     private const val SPEED_EPSILON = 0.001

@@ -136,6 +136,8 @@ data class AppSettings(
         private const val KEY_PLAYER_HINT_SHOWN = "player_hint_shown"
         private const val KEY_PLAYER_FOLLOW_VIDEO = "player_follow_video"
         private const val KEY_PLAYER_SEEKABLE_APPS = "player_seekable_apps"
+        // Followed by the package name.
+        private const val KEY_PLAYER_DRAG_SAMPLES = "player_drag_samples_"
 
         /** Backing preferences file for [load] / [save]; also for change listeners. */
         fun prefs(context: Context): SharedPreferences =
@@ -289,6 +291,17 @@ data class AppSettings(
         fun saveSeekableApps(context: Context, apps: Set<String>) {
             // A copy: a set handed to the preferences must not change afterwards.
             prefs(context).edit { putStringSet(KEY_PLAYER_SEEKABLE_APPS, apps.toHashSet()) }
+        }
+
+        /**
+         * How long [app]'s videos took to load after drags, as the
+         * player's DragSamples wrote it; null before the first.
+         */
+        fun dragSamples(context: Context, app: String): String? =
+            prefs(context).getString(KEY_PLAYER_DRAG_SAMPLES + app, null)
+
+        fun saveDragSamples(context: Context, app: String, samples: String) {
+            prefs(context).edit { putString(KEY_PLAYER_DRAG_SAMPLES + app, samples) }
         }
 
         /**
