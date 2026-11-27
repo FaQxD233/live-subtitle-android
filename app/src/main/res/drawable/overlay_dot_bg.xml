@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The subtitle player's controls folded: a small round dot, in the card's palette. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/card_dark" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/hud_border" />
+</shape>

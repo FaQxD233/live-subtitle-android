@@ -96,9 +96,7 @@
     <string name="player_notif_title">字幕播放</string>
     <string name="player_notif_playing">播放中 · %1$s</string>
     <string name="player_notif_paused">已暂停 · %1$s</string>
-    <string name="player_unlock">解锁</string>
-    <string name="player_lock">锁定：触摸传到下层应用</string>
-    <string name="player_locked_hint">已锁定：触摸穿透。双击暂停或继续，展开胶囊可解锁</string>
+    <string name="player_show_controls">控制栏</string>
     <string name="player_placeholder">字幕显示在这里 · 可上下拖动</string>
     <string name="player_previous">上一句</string>
     <string name="player_next">下一句</string>
@@ -110,7 +108,7 @@
     <string name="player_shifted_earlier">字幕提前 %1$s 秒</string>
     <string name="player_speed">播放倍速 %1$s（长按恢复 1×）</string>
     <string name="player_resumed">从 %1$s 继续</string>
-    <string name="player_hint">手动对齐时，视频开始就点「播放」；字幕慢了，听到那句话时点「下一句」，快了就等人开口说这句时点「上一句」。跟随视频 App 时，播放、暂停和拖动都跟着视频走，这两个按钮改的是对齐。控制栏几秒后会收成小胶囊，点一下就能展开。</string>
+    <string name="player_hint">控制栏展开时可以上下拖动字幕；收起后只剩一个小圆点，触摸会穿过字幕传给视频 App，点小圆点再展开。手动对齐时，视频开始就点「播放」；字幕慢了，听到那句话时点「下一句」，快了就等人开口说这句时点「上一句」；收起后在屏幕上双击可暂停或继续。跟随视频 App 时，播放、暂停和拖动都跟着视频走，这两个按钮改的是对齐。</string>
     <string name="player_no_cues">这个文件里没有找到字幕。</string>
     <string name="player_file_too_large">文件太大（超过 %1$d MB）。</string>
     <string name="player_open_failed">无法打开文件：%1$s</string>
@@ -146,7 +144,6 @@
     <string name="player_access_open">去开启</string>
     <string name="player_not_now">取消</string>
     <string name="player_follow_no_settings">打不开通知使用权设置，请在系统设置里搜索「通知使用权」。</string>
-    <string name="player_locked_hint_following">已锁定：触摸穿透，展开胶囊可解锁</string>
     <string name="player_sessions">媒体会话读数</string>
     <string name="player_sessions_label">诊断</string>
     <string name="player_sessions_copied">读数已复制</string>

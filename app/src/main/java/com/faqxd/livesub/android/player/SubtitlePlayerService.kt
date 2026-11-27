@@ -54,7 +54,8 @@ import java.io.File
  * an offset ahead of it. Play / pause then works the video, previous /
  * next, ±0.5 s and the progress bar move the offset, and the speed is the
  * video's. The controls can also show a readout of the media sessions
- * ([MediaSessionProbe]) for measuring.
+ * ([MediaSessionProbe]) for measuring. Folded, they are a small dot, and
+ * the notification can bring them out too.
  *
  * It plays no audio or video, so it is a special-use foreground service.
  * Live translation and the player both float over other apps, so starting
@@ -145,6 +146,7 @@ class SubtitlePlayerService : Service() {
             refreshProbe()
             // Back from granting access, say.
             follower?.refresh()
+            updateNotification()
         }
 
         override fun onFollowClicked() = toggleFollowing()
@@ -176,14 +178,8 @@ class SubtitlePlayerService : Service() {
 
         override fun onReadoutLongPressed() = copyProbeRecord()
 
-        override fun onLockChanged(locked: Boolean) {
-            // The notification offers "Unlock" while locked.
-            updateNotification()
-            if (locked) {
-                val hint = if (tracking) R.string.player_locked_hint_following else R.string.player_locked_hint
-                Toast.makeText(this@SubtitlePlayerService, hint, Toast.LENGTH_LONG).show()
-            }
-        }
+        // The notification offers the controls while they are folded.
+        override fun onControlsFolded() = updateNotification()
 
         // The video app played or paused when the second tap went down. A
         // followed video tells for itself, and toggling it again would undo that.
@@ -215,7 +211,7 @@ class SubtitlePlayerService : Service() {
         } else {
             when (action) {
                 ACTION_TOGGLE -> playOrPause()
-                ACTION_UNLOCK -> overlay?.setLocked(false)
+                ACTION_CONTROLS -> overlay?.showControls()
                 ACTION_STOP -> stopSelf()
             }
         }
@@ -647,8 +643,9 @@ class SubtitlePlayerService : Service() {
         if (!tracking || video?.canPlayPause == true) {
             builder.addAction(0, getString(if (playing) R.string.pause else R.string.player_play), action(ACTION_TOGGLE, 1))
         }
-        if (overlay?.isLocked == true) {
-            builder.addAction(0, getString(R.string.player_unlock), action(ACTION_UNLOCK, 2))
+        // The controls are only a dot: bring them out from here too.
+        if (overlay?.showsControls == false) {
+            builder.addAction(0, getString(R.string.player_show_controls), action(ACTION_CONTROLS, 2))
         }
         builder.addAction(0, getString(R.string.stop), action(ACTION_STOP, 3))
         return builder.build()
@@ -667,7 +664,7 @@ class SubtitlePlayerService : Service() {
         private const val NOTIF_ID = 2
         private const val ACTION_PLAY = "com.faqxd.livesub.android.player.PLAY"
         private const val ACTION_TOGGLE = "com.faqxd.livesub.android.player.TOGGLE"
-        private const val ACTION_UNLOCK = "com.faqxd.livesub.android.player.UNLOCK"
+        private const val ACTION_CONTROLS = "com.faqxd.livesub.android.player.CONTROLS"
         private const val ACTION_STOP = "com.faqxd.livesub.android.player.STOP"
         /** Refresh rate of the time and progress bar while the control bar shows. */
         private const val PROGRESS_TICK_MS = 250L

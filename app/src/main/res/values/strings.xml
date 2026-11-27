@@ -95,9 +95,7 @@
     <string name="player_notif_title">Subtitle player</string>
     <string name="player_notif_playing">Playing · %1$s</string>
     <string name="player_notif_paused">Paused · %1$s</string>
-    <string name="player_unlock">Unlock</string>
-    <string name="player_lock">Lock: let touches reach the app below</string>
-    <string name="player_locked_hint">Locked: touches pass through. Double-tap to pause or resume; unlock from the pill.</string>
+    <string name="player_show_controls">Controls</string>
     <string name="player_placeholder">Subtitles show here · drag up or down</string>
     <string name="player_previous">Previous line</string>
     <string name="player_next">Next line</string>
@@ -109,7 +107,7 @@
     <string name="player_shifted_earlier">Subtitles %1$s s earlier</string>
     <string name="player_speed">Playback speed %1$s (hold for 1×)</string>
     <string name="player_resumed">Continuing at %1$s</string>
-    <string name="player_hint">By hand, tap Play when the video starts. If a line shows late, tap Next line when you hear it; if early, Previous line when it is spoken. Following the video app, play, pause and seeking go with the video, and those buttons set the offset. The controls fold into a small pill after a few seconds; tap it to bring them back.</string>
+    <string name="player_hint">With the controls out, drag the subtitle up or down. Folded into a small dot, they let touches through the subtitle to the video app; tap the dot to bring them back. By hand, tap Play when the video starts; if a line shows late, tap Next line when you hear it, if early, Previous line when it is spoken; folded, double-tap anywhere to pause or resume. Following the video app, play, pause and seeking go with the video, and those buttons set the offset.</string>
     <string name="player_no_cues">No subtitles found in this file.</string>
     <string name="player_file_too_large">The file is too large (over %1$d MB).</string>
     <string name="player_open_failed">Can\'t open the file: %1$s</string>
@@ -147,7 +145,6 @@
     <string name="player_access_open">Open setting</string>
     <string name="player_not_now">Not now</string>
     <string name="player_follow_no_settings">Can\'t open the notification access setting. Look for \"Notification access\" in Settings.</string>
-    <string name="player_locked_hint_following">Locked: touches pass through. Unlock from the pill.</string>
     <string name="player_sessions">Media sessions readout</string>
     <string name="player_sessions_label">Diagnostics</string>
     <string name="player_sessions_copied">Readout copied</string>

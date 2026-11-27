@@ -35,20 +35,19 @@ import kotlin.math.roundToInt
  *    the background opacity setting. Its window spans the screen width
  *    (long subtitles wrap within it) and is placed by its bottom edge (a
  *    two-line subtitle grows upwards), at a height kept for portrait and
- *    landscape apart; it is hidden between subtitles ([showText]). Its row
- *    drags up and down, and a tap brings the controls back;
+ *    landscape apart; it is hidden between subtitles ([showText]);
  *  - the controls, a card in the caption overlay's style, of a fixed
- *    width (docs/plan-player-sync-ui.md, 4.2): a status chip and more,
- *    lock, minimize, close; progress and speed, the times under it;
- *    previous / ±0.5 s / play / next; an info line; a panel for longer
- *    text ([showPanel]); behind more, following on / off, the text size
- *    and the diagnostics. Minimized, by hand or [AUTO_HIDE_MS] into
- *    playback, it folds into a small pill that a tap expands. It drags
+ *    width, its background as opaque as the subtitle's
+ *    (docs/plan-player-sync-ui.md, 4.2 and 4.4): a status chip and more,
+ *    minimize, close; progress and speed, the times under it; previous /
+ *    ±0.5 s / play / next; an info line; a panel for longer text
+ *    ([showPanel]); behind more, following on / off, the text size and
+ *    the diagnostics. Minimized, by hand or [AUTO_HIDE_MS] into
+ *    playback, it folds into a small dot that a tap expands. It drags
  *    anywhere.
- * Locking lets touches pass through the subtitle to the app below (the
- * controls fold up); the pill then shows a lock, and the card's lock
- * button unlocks. Locked, a double tap anywhere plays or pauses
- * ([onOutsideTouch]).
+ * While the card is out, the subtitle's row drags up and down. Folded,
+ * touches pass through the subtitle to the app below, and a double tap
+ * anywhere plays or pauses ([onOutsideTouch]).
  *
  * The chip says whether and how the subtitles follow the video app
  * ([showFollow]); the info line under the buttons shows a brief note
@@ -80,10 +79,10 @@ class SubtitlePlayerOverlay(
         fun onFontSizeClicked(deltaSp: Int)
         /** The controls were expanded: they need progress updates now. */
         fun onControlsExpanded()
-        /** Fired after the subtitle was locked (touches pass through) or unlocked. */
-        fun onLockChanged(locked: Boolean)
+        /** The controls folded into the dot: touches pass through the subtitle now. */
+        fun onControlsFolded()
         /**
-         * Locked, a double tap went down in the app below [sinceMs] ago (it
+         * Folded, a double tap went down in the app below [sinceMs] ago (it
          * is confirmed only once no third touch followed): play or pause as
          * of then, as the video app did.
          */
@@ -125,10 +124,8 @@ class SubtitlePlayerOverlay(
     // ---- The control window ----
     private val controlsRoot: View = View.inflate(context, R.layout.overlay_subtitle_controls, null)
     private val controlsWindow = OverlayWindow(context, controlsRoot, controlsLayoutParams())
-    private val pill: View = controlsRoot.findViewById(R.id.playerPill)
-    private val pillFollow: View = controlsRoot.findViewById(R.id.playerPillFollow)
-    private val pillState: ImageView = controlsRoot.findViewById(R.id.playerPillState)
-    private val pillLock: View = controlsRoot.findViewById(R.id.playerPillLock)
+    private val dot: View = controlsRoot.findViewById(R.id.playerDot)
+    private val dotState: ImageView = controlsRoot.findViewById(R.id.playerDotState)
     private val card: View = controlsRoot.findViewById(R.id.playerCard)
     private val chip: TextView = controlsRoot.findViewById(R.id.playerChip)
     private val seekBar: SeekBar = controlsRoot.findViewById(R.id.playerSeek)
@@ -136,7 +133,6 @@ class SubtitlePlayerOverlay(
     private val durationLabel: TextView = controlsRoot.findViewById(R.id.playerDuration)
     private val speedBtn: Button = controlsRoot.findViewById(R.id.playerSpeedBtn)
     private val playBtn: ImageButton = controlsRoot.findViewById(R.id.playerPlayBtn)
-    private val lockBtn: ImageButton = controlsRoot.findViewById(R.id.playerLockBtn)
     private val infoLabel: TextView = controlsRoot.findViewById(R.id.playerInfo)
     private val resetBtn: View = controlsRoot.findViewById(R.id.playerResetBtn)
     private val panel: View = controlsRoot.findViewById(R.id.playerPanel)
@@ -174,7 +170,7 @@ class SubtitlePlayerOverlay(
     }
     private val autoMinimize = Runnable { setExpanded(false) }
 
-    // Locked, double taps anywhere play or pause (see onOutsideTouch).
+    // Folded, double taps anywhere play or pause (see onOutsideTouch).
     private val doubleTapWindowMs =
         (ViewConfiguration.getTapTimeout() + ViewConfiguration.getDoubleTapTimeout()).toLong()
     private val doubleTap = IsolatedDoubleTap(doubleTapWindowMs)
@@ -184,34 +180,32 @@ class SubtitlePlayerOverlay(
         callbacks.onDoubleTap(SystemClock.uptimeMillis() - doubleTapDown)
     }
 
-    /** True while touches pass through the subtitle to the app below. */
-    val isLocked: Boolean
-        get() = textWindow.isClickThrough
-
     /** Whether the expanded controls show, which need progress updates. */
     val showsControls: Boolean
         get() = expanded
 
     init {
-        // The subtitle's row, the whole window, drags up and down; a tap
-        // brings the controls back. Its empty parts would take touches anyway.
+        // While the card is out, the subtitle's row, the whole window, drags
+        // up and down (folded, touches pass through it). Its empty parts would
+        // take touches anyway; using it keeps the card out.
         textRoot.setOnTouchListener(
             textWindow.dragListener(clickOnTap = true, verticalOnly = true) {
                 AppSettings.saveWindowGeometry(
                     context, subtitleWindowKey(textLandscape), textWindow.params.x, textWindow.params.y,
                 )
+                touched()
             }
         )
-        textRoot.setOnClickListener { setExpanded(true) }
+        textRoot.setOnClickListener { touched() }
 
-        // The control window drags by the pill and the card's empty parts.
+        // The control window drags by the dot and the card's empty parts.
         val saveControls = {
             AppSettings.saveWindowGeometry(
                 context, AppSettings.WINDOW_PLAYER_CONTROLS, controlsWindow.params.x, controlsWindow.params.y,
             )
         }
-        pill.setOnTouchListener(controlsWindow.dragListener(clickOnTap = true, onDragEnd = saveControls))
-        pill.setOnClickListener { setExpanded(true) }
+        dot.setOnTouchListener(controlsWindow.dragListener(clickOnTap = true, onDragEnd = saveControls))
+        dot.setOnClickListener { setExpanded(true) }
         card.setOnTouchListener(controlsWindow.dragListener(onDragEnd = saveControls))
         // Touches going down in the app below arrive here as ACTION_OUTSIDE.
         controlsRoot.setOnTouchListener { _, event ->
@@ -232,7 +226,6 @@ class SubtitlePlayerOverlay(
             touched()
             true
         }
-        control(R.id.playerLockBtn) { setLocked(!isLocked) }
         control(R.id.playerMinimizeBtn) { setExpanded(false) }
         control(R.id.playerCloseBtn) { callbacks.onCloseClicked() }
         control(R.id.playerFollowBtn) { callbacks.onFollowClicked() }
@@ -314,11 +307,8 @@ class SubtitlePlayerOverlay(
         applyStyle()
     }
 
-    /** A newly loaded subtitle opens like the player does: unlocked, with the controls out. */
-    fun showNewSubtitles() {
-        setLocked(false)
-        setExpanded(true)
-    }
+    /** A newly loaded subtitle opens like the player does: with the controls out, so the subtitle moves. */
+    fun showNewSubtitles() = setExpanded(true)
 
     /** Show the cues active now as one subtitle (their text is HTML); nothing when there are none. */
     fun showCues(cues: List<SubtitleCue>) {
@@ -431,14 +421,17 @@ class SubtitlePlayerOverlay(
         if ((text != null) != wasShown) touched()
     }
 
-    /** Fold the controls into the pill, e.g. out of the way of a setting the user is sent to. */
+    /** Fold the controls into the dot, e.g. out of the way of a setting the user is sent to. */
     fun foldControls() = setExpanded(false)
+
+    /** Bring the controls out of the dot, e.g. from the notification. */
+    fun showControls() = setExpanded(true)
 
     /**
      * Show whether following the video app is on ([on]) and how it goes:
-     * [chipText] and [tone] on the chip, and on the info line [detail],
-     * what following needs, if anything. While the subtitles follow a
-     * video ([followsVideo]), the pill has a dot, the speed is the
+     * [chipText], and [tone] on the chip's dot and the folded controls'
+     * dot; on the info line [detail], what following needs, if anything.
+     * While the subtitles follow a video ([followsVideo]), the speed is the
      * video's, so its button is off, and play / pause works only where the
      * video app takes it ([canPlayPause]).
      */
@@ -453,8 +446,9 @@ class SubtitlePlayerOverlay(
         followBtn.setBackgroundResource(if (on) R.drawable.overlay_btn_primary else R.drawable.overlay_btn_secondary)
         followBtn.contentDescription = context.getString(if (on) R.string.player_follow_stop else R.string.player_follow_start)
         chip.text = chipText
-        chip.compoundDrawableTintList = ColorStateList.valueOf(ContextCompat.getColor(context, tone.colorRes))
-        pillFollow.visibility = if (followsVideo) View.VISIBLE else View.GONE
+        val toneColor = ColorStateList.valueOf(ContextCompat.getColor(context, tone.colorRes))
+        chip.compoundDrawableTintList = toneColor
+        dotState.imageTintList = toneColor
         followDetail = detail
         refreshInfo()
         setUsable(speedBtn, !followsVideo)
@@ -462,35 +456,24 @@ class SubtitlePlayerOverlay(
     }
 
     /**
-     * Lock: touches pass through the subtitle to the app below (the window
-     * is dimmed slightly, an Android 12+ requirement, see
-     * [OverlayWindow.setClickThrough]) and the controls fold up. Unlock: the
-     * subtitle can be dragged and tapped again.
-     */
-    fun setLocked(locked: Boolean) {
-        if (!textWindow.setClickThrough(locked)) return
-        lockBtn.setImageResource(if (locked) R.drawable.ic_overlay_unlock else R.drawable.ic_overlay_lock)
-        lockBtn.contentDescription = context.getString(if (locked) R.string.player_unlock else R.string.player_lock)
-        pillLock.visibility = if (locked) View.VISIBLE else View.GONE
-        if (locked) setExpanded(false) else controlsRoot.removeCallbacks(confirmDoubleTap)
-        refreshText()
-        callbacks.onLockChanged(locked)
-    }
-
-    /**
-     * Expand the controls into the card, or fold them into the pill. While
-     * playing, the card folds up by itself [AUTO_HIDE_MS] after it was last
-     * touched.
+     * Expand the controls into the card, or fold them into the dot. Out,
+     * the subtitle can be dragged; folded, touches pass through it to the
+     * app below (the window is dimmed slightly then, an Android 12+
+     * requirement, see [OverlayWindow.setClickThrough]). While playing, the
+     * card folds up by itself [AUTO_HIDE_MS] after it was last touched.
      */
     private fun setExpanded(expand: Boolean) {
         if (expand != expanded) {
             expanded = expand
             card.visibility = if (expand) View.VISIBLE else View.GONE
-            pill.visibility = if (expand) View.GONE else View.VISIBLE
-            // The card is bigger than the pill it replaces.
+            dot.visibility = if (expand) View.GONE else View.VISIBLE
+            textWindow.setClickThrough(!expand)
+            // A double tap still to be confirmed was the folded controls'.
+            if (expand) controlsRoot.removeCallbacks(confirmDoubleTap)
+            // The card is bigger than the dot it replaces.
             refit()
             refreshText()
-            if (expand) callbacks.onControlsExpanded()
+            if (expand) callbacks.onControlsExpanded() else callbacks.onControlsFolded()
         }
         touched()
     }
@@ -501,12 +484,11 @@ class SubtitlePlayerOverlay(
         val icon = if (playing) R.drawable.ic_player_pause else R.drawable.ic_player_play
         playBtn.setImageResource(icon)
         playBtn.contentDescription = context.getString(if (playing) R.string.pause else R.string.player_play)
-        pillState.setImageResource(icon)
         touched()
     }
 
     /**
-     * A touch went down outside the controls, in the app below. Locked, a
+     * A touch went down outside the controls, in the app below. Folded, a
      * double tap plays or pauses, as it does in many video apps. Android
      * tells an overlay only that a touch that goes to another app went
      * down, not where (the coordinates come zeroed) and not whether it was
@@ -518,7 +500,7 @@ class SubtitlePlayerOverlay(
      * happened.
      */
     private fun onOutsideTouch(downTime: Long) {
-        if (!isLocked) return
+        if (expanded) return
         // Another touch soon after a pair makes it a burst.
         controlsRoot.removeCallbacks(confirmDoubleTap)
         if (doubleTap.onDown(downTime)) {
@@ -584,11 +566,11 @@ class SubtitlePlayerOverlay(
     }
 
     /**
-     * Show the cues, or between subtitles, while the controls are out and
-     * the subtitle unlocked, a dimmed placeholder to position it by.
+     * Show the cues, or between subtitles, while the controls are out (the
+     * subtitle moves then), a dimmed placeholder to position it by.
      */
     private fun refreshText() {
-        val placeholder = cuesHtml.isEmpty() && expanded && !isLocked
+        val placeholder = cuesHtml.isEmpty() && expanded
         val key = if (placeholder) PLACEHOLDER_KEY else cuesHtml
         if (key == shownKey) return
         shownKey = key
@@ -663,7 +645,11 @@ class SubtitlePlayerOverlay(
         text.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
         outline.paint.strokeWidth = outline.textSize * OUTLINE_WIDTH_RATIO
         outline.invalidate()
-        box.background?.mutate()?.alpha = (settings.bgOpacity.coerceIn(0f, 1f) * 255).roundToInt()
+        // The background opacity setting, as in the caption overlay: the subtitle's box, the card and the dot.
+        val opacity = (settings.bgOpacity.coerceIn(0f, 1f) * 255).roundToInt()
+        box.background?.mutate()?.alpha = opacity
+        card.background?.mutate()?.alpha = opacity
+        dot.background?.mutate()?.alpha = opacity
         // A larger text size may need a taller window, as a longer subtitle does.
         if (textRoot.isShown) showText()
     }
@@ -728,7 +714,7 @@ class SubtitlePlayerOverlay(
         /** Where the controls start, as a fraction of the screen height from the top. */
         const val DEFAULT_CONTROLS_Y_FRACTION = 0.3f
         /** The controls fold up this long after they were last used, while playing. */
-        const val AUTO_HIDE_MS = 4_000L
+        const val AUTO_HIDE_MS = 10_000L
         const val SHIFT_MS = 500L
         const val FONT_STEP_SP = 2
         /** Resolution of the progress bar. */

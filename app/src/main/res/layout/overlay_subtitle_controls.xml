@@ -3,69 +3,34 @@
     The subtitle player's control window, apart from the subtitle so the
     two never push each other around. Expanded it is a card in the caption
     overlay's style, 300dp wide (narrower on a narrower screen, set in
-    code); minimized (by hand, by locking, or a few seconds into playback)
-    it folds into a small pill that expands it again on a tap. Both drag
-    the window; the margins leave room for the elevation shadows. See
-    docs/plan-player-sync-ui.md, 4.2.
+    code); folded (by hand, or a while into playback) it is only a small
+    dot that expands it again on a tap. Both drag the window; the margins
+    leave room for the elevation shadows. See docs/plan-player-sync-ui.md,
+    4.2 and 4.4.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content">
 
-    <LinearLayout
-        android:id="@+id/playerPill"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_margin="6dp"
-        android:background="@drawable/overlay_pill_bg"
+    <!-- The controls folded; its center shows how following goes, as the chip's dot does. -->
+    <FrameLayout
+        android:id="@+id/playerDot"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_margin="4dp"
+        android:background="@drawable/overlay_dot_bg"
         android:contentDescription="@string/overlay_expand"
-        android:elevation="6dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingVertical="6dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="8dp"
+        android:elevation="4dp"
         android:visibility="gone">
 
-        <!-- Shown while the subtitles follow a video. -->
         <ImageView
-            android:id="@+id/playerPillFollow"
+            android:id="@+id/playerDotState"
             android:layout_width="10dp"
             android:layout_height="10dp"
-            android:layout_marginEnd="6dp"
+            android:layout_gravity="center"
             android:importantForAccessibility="no"
-            android:src="@drawable/status_dot"
-            android:tint="@color/status_connected"
-            android:visibility="gone" />
-
-        <!-- Playing or paused. -->
-        <ImageView
-            android:id="@+id/playerPillState"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_player_play"
-            android:tint="@color/hud_text_primary" />
-
-        <!-- Shown while the subtitle is locked (touches pass through). -->
-        <ImageView
-            android:id="@+id/playerPillLock"
-            android:layout_width="14dp"
-            android:layout_height="14dp"
-            android:layout_marginStart="6dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_overlay_lock"
-            android:tint="@color/hud_text_primary"
-            android:visibility="gone" />
-
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginStart="8dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_overlay_expand"
-            android:tint="@color/hud_text_primary" />
-    </LinearLayout>
+            android:src="@drawable/status_dot" />
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/playerCard"
@@ -78,7 +43,7 @@
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp">
 
-        <!-- Header: the status chip, then more, lock, minimize, close -->
+        <!-- Header: the status chip, then more, minimize, close -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -120,14 +85,6 @@
                 android:layout_height="30dp"
                 android:contentDescription="@string/player_more"
                 android:src="@drawable/ic_more_vert" />
-
-            <ImageButton
-                android:id="@+id/playerLockBtn"
-                style="@style/SubtitleControl"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
-                android:contentDescription="@string/player_lock"
-                android:src="@drawable/ic_overlay_lock" />
 
             <ImageButton
                 android:id="@+id/playerMinimizeBtn"
